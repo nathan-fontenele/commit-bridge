@@ -5,8 +5,9 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from src.commit_filter import Commit
-from src.markdown_writer import (activity_line, append_line, normalize_activity_files,
-                                 repair_activity_files)
+from src.markdown_writer import (TABLE_HEADER, TABLE_SEPARATOR, activity_line, activity_row,
+                                 append_line, normalize_activity_files, repair_activity_files,
+                                 table_row)
 
 
 class MarkdownWriterTests(unittest.TestCase):
@@ -41,25 +42,35 @@ class MarkdownWriterTests(unittest.TestCase):
         self.assertEqual(activity_line(commit, 8, ZoneInfo("America/Sao_Paulo")),
                          "[2026-10-09 12:30:00 -03:00] [Payment API] [payment-service] "
                          "[feat: add invoice validation] [aaaaaaaa]")
+        self.assertEqual(activity_row(commit, 8, ZoneInfo("America/Sao_Paulo")),
+                         "| 2026-10-09 12:30:00 -03:00 | Payment API | payment-service | "
+                         "feat: add invoice validation | aaaaaaaa |")
 
-    def test_legacy_entries_gain_visible_breaks_with_next_real_entry(self):
+    def test_table_cells_escape_pipes_and_backslashes(self):
+        self.assertEqual(table_row("date", "A|B", "repo", r"fix: A\B | C", "abcdef12"),
+                         r"| date | A\|B | repo | fix: A\\B \| C | abcdef12 |")
+
+    def test_legacy_entries_become_table_rows_with_next_real_entry(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "activity/2026/10/2026-10-09.md"
             path.parent.mkdir(parents=True)
             path.write_text("[Project] first - aaaaaaaa\n[Project] second - bbbbbbbb\n", encoding="utf-8")
-            append_line(path, "[Project] third - cccccccc")
+            append_line(path, "| 2026-10-09 12:30:00 -03:00 | Project | repo | third | cccccccc |")
             self.assertEqual(path.read_text(encoding="utf-8"),
-                             "[Project] first - aaaaaaaa  \n"
-                             "[Project] second - bbbbbbbb  \n"
-                             "[Project] third - cccccccc  \n")
+                             f"{TABLE_HEADER}\n{TABLE_SEPARATOR}\n"
+                             "| — | Project | — | first | aaaaaaaa |\n"
+                             "| — | Project | — | second | bbbbbbbb |\n"
+                             "| 2026-10-09 12:30:00 -03:00 | Project | repo | third | cccccccc |\n")
             with self.assertRaises(ValueError):
-                append_line(path, "[Project] first - aaaaaaaa")
+                append_line(path, "| — | Project | — | first | aaaaaaaa |")
 
     def test_new_file_has_one_record_per_source_line(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "activity/2026/10/2026-10-09.md"
-            append_line(path, "[Project] first - aaaaaaaa")
-            self.assertEqual(path.read_text(encoding="utf-8"), "[Project] first - aaaaaaaa  \n")
+            append_line(path, "| 2026-10-09 12:30:00 -03:00 | Project | repo | first | aaaaaaaa |")
+            self.assertEqual(path.read_text(encoding="utf-8"),
+                             f"{TABLE_HEADER}\n{TABLE_SEPARATOR}\n"
+                             "| 2026-10-09 12:30:00 -03:00 | Project | repo | first | aaaaaaaa |\n")
 
     def test_old_daily_files_are_repaired_without_touching_other_markdown(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -71,6 +82,20 @@ class MarkdownWriterTests(unittest.TestCase):
             notes.write_text("Keep this file unchanged\n", encoding="utf-8")
             self.assertEqual(normalize_activity_files(directory), [old])
             self.assertEqual(old.read_text(encoding="utf-8"),
-                             "[Project] first - aaaaaaaa  \n[Project] second - bbbbbbbb  \n")
+                             f"{TABLE_HEADER}\n{TABLE_SEPARATOR}\n"
+                             "| — | Project | — | first | aaaaaaaa |\n"
+                             "| — | Project | — | second | bbbbbbbb |\n")
             self.assertEqual(notes.read_text(encoding="utf-8"), "Keep this file unchanged\n")
             self.assertEqual(normalize_activity_files(directory), [])
+
+    def test_previous_bracket_format_becomes_full_table_row(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp) / "activity"
+            path = directory / "2026/10/2026-10-09.md"
+            path.parent.mkdir(parents=True)
+            path.write_text("[2026-10-09 12:30:00 -03:00] [Project] [repo] "
+                            "[feat: change] [aaaaaaaa]  \n", encoding="utf-8")
+            self.assertEqual(normalize_activity_files(directory), [path])
+            self.assertEqual(path.read_text(encoding="utf-8"),
+                             f"{TABLE_HEADER}\n{TABLE_SEPARATOR}\n"
+                             "| 2026-10-09 12:30:00 -03:00 | Project | repo | feat: change | aaaaaaaa |\n")

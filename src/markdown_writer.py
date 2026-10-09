@@ -1,7 +1,15 @@
-"""Render exactly one activity line per Azure commit."""
+"""Render one Markdown table row per original Azure commit."""
 
 from pathlib import Path
 import re
+
+TABLE_HEADER = "| Data e hora (Brasília) | Projeto | Repositório Azure | Mensagem | Hash |"
+TABLE_SEPARATOR = "| --- | --- | --- | --- | --- |"
+LEGACY_BRACKET = re.compile(
+    r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{2}:\d{2})\] "
+    r"\[(.*?)\] \[(.*?)\] \[(.*)\] \[([0-9a-fA-F]{1,40})\]$")
+LEGACY_PLAIN = re.compile(r"^\[(.*?)\] (.*) - ([0-9a-fA-F]{1,40})$")
+TABLE_HASH = re.compile(r"\| ([0-9a-fA-F]{1,40}) \|$")
 
 
 def activity_path(root: Path, directory: str, sync_day):
@@ -21,19 +29,64 @@ def activity_line(commit, hash_length: int, timezone):
             f"[{message}] [{commit.sha[:hash_length]}]")
 
 
+def table_cell(value: str):
+    printable = "".join(char if char.isprintable() else " " for char in value)
+    return printable.replace("\\", "\\\\").replace("|", "\\|")
+
+
+def table_row(date: str, project: str, repository: str, message: str, sha: str):
+    return "| " + " | ".join(table_cell(value) for value in
+                             (date, project, repository, message, sha)) + " |"
+
+
+def activity_row(commit, hash_length: int, timezone):
+    local_time = commit.committed_at.astimezone(timezone)
+    committed_at = local_time.strftime("%Y-%m-%d %H:%M:%S %z")
+    committed_at = committed_at[:-2] + ":" + committed_at[-2:]
+    return table_row(committed_at, commit.project_name, commit.repository_name,
+                     commit.message, commit.sha[:hash_length])
+
+
+def legacy_row(line: str):
+    bracket = LEGACY_BRACKET.fullmatch(line)
+    if bracket:
+        return table_row(*bracket.groups())
+    plain = LEGACY_PLAIN.fullmatch(line)
+    if plain:
+        project, message, sha = plain.groups()
+        return table_row("—", project, "—", message, sha)
+    raise ValueError("Unrecognized activity record in daily Markdown")
+
+
+def read_rows(content: str):
+    lines = [line.rstrip() for line in content.splitlines() if line.strip()]
+    if not lines:
+        return []
+    if lines[:2] == [TABLE_HEADER, TABLE_SEPARATOR]:
+        rows = lines[2:]
+        if any(not row.startswith("| ") or not TABLE_HASH.search(row) for row in rows):
+            raise ValueError("Malformed activity table")
+        return rows
+    return [legacy_row(line) for line in lines]
+
+
+def render_table(rows):
+    if not rows:
+        return ""
+    return "\n".join((TABLE_HEADER, TABLE_SEPARATOR, *rows)) + "\n"
+
+
 def append_line(path: Path, line: str):
     path.parent.mkdir(parents=True, exist_ok=True)
-    existing = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-    records = [record.rstrip() for record in existing if record.strip()]
-    if line in records:
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    rows = read_rows(existing)
+    if line in rows:
         raise ValueError(f"Activity line already exists without state entry: {path}")
-    # Two trailing spaces turn a source newline into a visible break on GitHub.
-    # Re-render earlier entries in this day's file while adding the next real commit.
-    path.write_text("".join(f"{record}  \n" for record in [*records, line]), encoding="utf-8")
+    path.write_text(render_table([*rows, line]), encoding="utf-8")
 
 
 def normalize_activity_files(directory: Path):
-    """Repair legacy daily files only when a new source commit will be published."""
+    """Convert legacy daily files to tables alongside a real source commit."""
     changed = []
     if not directory.exists():
         return changed
@@ -41,8 +94,7 @@ def normalize_activity_files(directory: Path):
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.md", path.name):
             continue
         original = path.read_text(encoding="utf-8")
-        records = [record.rstrip() for record in original.splitlines() if record.strip()]
-        normalized = "".join(f"{record}  \n" for record in records)
+        normalized = render_table(read_rows(original))
         if normalized != original:
             path.write_text(normalized, encoding="utf-8")
             changed.append(path)
@@ -50,7 +102,7 @@ def normalize_activity_files(directory: Path):
 
 
 def repair_activity_files(root: Path, directory: str, state, resolve, hash_length: int, timezone):
-    """Upgrade tracked legacy rows using their original Azure commits, then fix line breaks."""
+    """Convert daily files to tables and fill missing fields from saved Azure commits."""
     activity_root = (root / directory).resolve()
     entries_by_file = {}
     for key, entry in state["synced"].items():
@@ -58,10 +110,10 @@ def repair_activity_files(root: Path, directory: str, state, resolve, hash_lengt
             organization, repository_id, sha = key.rsplit(":", 2)
             relative = Path(entry["file"])
         except (ValueError, KeyError, TypeError) as exc:
-            raise ValueError(f"Invalid state entry: {key}") from exc
+            raise ValueError("Invalid state entry") from exc
         if not organization or not repository_id or len(sha) != 40 or any(
                 char not in "0123456789abcdef" for char in sha):
-            raise ValueError(f"Invalid state key: {key}")
+            raise ValueError("Invalid state key")
         path = (root / relative).resolve()
         if not path.is_relative_to(activity_root) or not re.fullmatch(
                 r"\d{4}-\d{2}-\d{2}\.md", path.name):
@@ -77,19 +129,22 @@ def repair_activity_files(root: Path, directory: str, state, resolve, hash_lengt
         if not path.is_file():
             raise ValueError(f"Missing activity file referenced by state: {path}")
         original = path.read_text(encoding="utf-8")
-        rows = [row.rstrip() for row in original.splitlines() if row.strip()]
+        rows = read_rows(original)
         for key, sha in entries_by_file.get(path, []):
             short_sha = sha[:hash_length]
-            old = [index for index, row in enumerate(rows) if row.endswith(f" - {short_sha}")]
-            new = [index for index, row in enumerate(rows) if row.endswith(f"[{short_sha}]")]
-            if len(old) + len(new) != 1:
-                raise ValueError(f"Could not uniquely locate saved commit {key} in {path}")
-            if old:
+            matches = [index for index, row in enumerate(rows)
+                       if row.endswith(f"| {short_sha} |")]
+            if len(matches) != 1:
+                raise ValueError(f"Could not uniquely locate a saved commit in {path}")
+            index = matches[0]
+            if rows[index].startswith("| — |"):
                 commit = resolve(key)
                 if commit.key != key:
-                    raise ValueError(f"Azure commit identity differs from saved state: {key}")
-                rows[old[0]] = activity_line(commit, hash_length, timezone)
-        updated = "".join(f"{row}  \n" for row in rows)
+                    raise ValueError("Azure commit identity differs from saved state")
+                rows[index] = activity_row(commit, hash_length, timezone)
+        if any(row.startswith("| — |") for row in rows):
+            raise ValueError(f"Activity file has rows without matching state entries: {path}")
+        updated = render_table(rows)
         if updated != original:
             updates[path] = updated
     for path, content in updates.items():

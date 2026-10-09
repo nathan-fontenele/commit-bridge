@@ -10,7 +10,7 @@ on:
         type: boolean
         default: false
       repair_format:
-        description: "Upgrade old activity rows using Azure metadata (one bot commit)"
+        description: "Convert old activity files to tables (one bot commit)"
         type: boolean
         default: false
       since:

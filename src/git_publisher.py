@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .markdown_writer import (activity_line, activity_path, append_line,
+from .markdown_writer import (activity_line, activity_path, activity_row, append_line,
                               normalize_activity_files, repair_activity_files)
 from .state_manager import load_state, save_state
 
@@ -73,7 +73,7 @@ class Publisher:
             path = activity_path(self.root, self.output_dir, now.date())
             repaired = normalize_activity_files(self.root / self.output_dir)
             line = activity_line(commit, self.hash_length, self.timezone)
-            append_line(path, line)
+            append_line(path, activity_row(commit, self.hash_length, self.timezone))
             state["synced"][commit.key] = {
                 "synced_at": now.isoformat(timespec="seconds"),
                 "file": path.relative_to(self.root).as_posix(),

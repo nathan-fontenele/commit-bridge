@@ -113,9 +113,9 @@ def main():
         def resolve(key):
             organization_id, repository_id, sha = key.rsplit(":", 2)
             if organization_id.casefold() != azure["organization"].casefold():
-                raise ValueError(f"State entry belongs to another Azure organization: {key}")
+                raise ValueError("State entry belongs to another Azure organization")
             if repository_id not in repositories:
-                raise ValueError(f"Azure repository for saved commit is inaccessible: {key}")
+                raise ValueError("Azure repository for a saved commit is inaccessible")
             project, repository = repositories[repository_id]
             raw = client.commit(project["id"], repository_id, sha)
             author_email = raw.get("author", {}).get("email", "").strip().casefold()
@@ -124,7 +124,7 @@ def main():
                                repository_id=repository_id, repository_name=repository["name"],
                                emails={author_email}, earliest=datetime.min.replace(tzinfo=timezone.utc))
             if commit is None:
-                raise ValueError(f"Azure returned invalid data for saved commit: {key}")
+                raise ValueError("Azure returned invalid data for a saved commit")
             return commit
 
         publisher.repair_format(resolve=resolve)

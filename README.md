@@ -11,7 +11,15 @@ daily-activity/                # exemplo de destino privado
 └── state/synced_commits.json
 ```
 
-Cada linha do arquivo diário e a mensagem do commit correspondente no GitHub seguem o formato `[AAAA-MM-DD HH:MM:SS -03:00] [projeto] [repositório do Azure] [primeira linha da mensagem] [abcdef12]`. A data e hora na linha são as do **commit original no Azure**, convertidas para `America/Sao_Paulo`; a data do arquivo é a da **sincronização** nesse fuso. O estado evita duplicatas entre branches e execuções. Os commits do GitHub usam a data real em que são criados. O reparo manual pode atualizar as linhas antigas; as mensagens dos commits Git já publicados continuam no histórico original.
+Cada arquivo diário mostra os commits em uma tabela Markdown:
+
+| Data e hora (Brasília) | Projeto | Repositório Azure | Mensagem | Hash |
+| --- | --- | --- | --- | --- |
+| 2026-10-09 12:30:00 -03:00 | Payment API | payment-service | feat: add invoice validation | a1b2c3d4 |
+
+A data e hora na tabela são as do **commit original no Azure**, convertidas para `America/Sao_Paulo`; a data do arquivo é a da **sincronização** nesse fuso. O estado evita duplicatas entre branches e execuções. A mensagem do commit Git de sincronização continua no formato `[data/hora] [projeto] [repositório] [mensagem] [hash]`, com a data real de criação do commit no GitHub. O reparo manual converte arquivos antigos para tabelas; as mensagens dos commits Git já publicados continuam no histórico original.
+
+Se uma atividade antiga ainda não tiver data/hora ou repositório na linha original, a conversão automática mostrará `—` nesses campos até a execução do reparo manual com acesso ao Azure.
 
 ## Requisitos
 
@@ -66,7 +74,7 @@ O `config.yaml` versionado é um modelo seguro para publicação. Com as listas 
 
 O agendamento roda a cada hora, no minuto 17 UTC. A consulta normal cobre os últimos sete dias. Na execução manual, o campo `since` aceita `YYYY-MM-DD` em UTC para reprocessar um período mais antigo sem duplicar os commits já registrados.
 
-Para atualizar arquivos antigos para o novo padrão, execute o workflow manualmente com **`repair_format: true`**, deixando `dry_run` desmarcado e `since` vazio. O reparo consulta no Azure cada commit antigo registrado no estado, atualiza as linhas e corrige quebras de linha. Ele não altera o estado de sincronização e cria um único commit de manutenção com autor bot **somente se houver arquivos a corrigir**. Se algum commit antigo não estiver mais acessível no Azure ou não corresponder ao estado salvo, o reparo falha sem publicar dados incompletos. As mensagens dos commits Git anteriores não são reescritas.
+Para converter arquivos antigos em tabelas e preencher campos que faltam, execute o workflow manualmente com **`repair_format: true`**, deixando `dry_run` desmarcado e `since` vazio. O reparo consulta no Azure os commits antigos registrados no estado quando precisa de metadados ausentes. Ele não altera o estado de sincronização e cria um único commit de manutenção com autor bot **somente se houver arquivos a corrigir**. Se algum commit antigo necessário não estiver mais acessível no Azure ou não corresponder ao estado salvo, o reparo falha sem publicar dados incompletos. As mensagens dos commits Git anteriores não são reescritas.
 
 ### Prévia local detalhada
 

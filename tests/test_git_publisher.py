@@ -5,9 +5,11 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from src.commit_filter import Commit
 from src.git_publisher import Publisher
+from src.markdown_writer import TABLE_HEADER, TABLE_SEPARATOR, activity_line
 
 
 def git(directory, *args):
@@ -48,8 +50,9 @@ class PublisherTests(unittest.TestCase):
             self.assertTrue(publisher.repair_format(resolve=lambda key: commit))
             self.assertFalse(publisher.repair_format(resolve=lambda key: commit))
             self.assertEqual(path.read_text(),
-                             "[2026-10-09 12:30:00 -03:00] [Payment API] [payment-service] "
-                             "[feat: original] [aaaaaaaa]  \n")
+                             f"{TABLE_HEADER}\n{TABLE_SEPARATOR}\n"
+                             "| 2026-10-09 12:30:00 -03:00 | Payment API | payment-service | "
+                             "feat: original | aaaaaaaa |\n")
             self.assertEqual(state_path.read_text(), original_state)
             self.assertEqual(git(root, "--git-dir", str(bare), "rev-list", "--count", "main"), "2")
 
@@ -79,7 +82,9 @@ class PublisherTests(unittest.TestCase):
             self.assertEqual(git(checkout, "log", "-1", "--format=%ae"),
                              "41898282+github-actions[bot]@users.noreply.github.com")
             self.assertEqual(legacy.read_text(encoding="utf-8"),
-                             "[Project] first - aaaaaaaa  \n[Project] second - bbbbbbbb  \n")
+                             f"{TABLE_HEADER}\n{TABLE_SEPARATOR}\n"
+                             "| — | Project | — | first | aaaaaaaa |\n"
+                             "| — | Project | — | second | bbbbbbbb |\n")
 
     def test_one_remote_commit_per_event_and_idempotence(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -113,16 +118,18 @@ class PublisherTests(unittest.TestCase):
             activity = list((checkout / "activity").rglob("*.md"))
             self.assertEqual(len(activity), 2)
             current = next(path for path in activity if path != legacy)
-            self.assertEqual(len(current.read_text().splitlines()), 3)
-            first_line = current.read_text().splitlines()[0].rstrip()
-            self.assertIn("[Payment API] [payment-service] [feat: change a] [aaaaaaaa]", first_line)
+            self.assertEqual(len(current.read_text().splitlines()), 5)
+            first_line = current.read_text().splitlines()[2]
+            self.assertIn("| Payment API | payment-service | feat: change a | aaaaaaaa |", first_line)
             self.assertEqual(git(checkout, "log", "-1", "--format=%s"),
-                             current.read_text().splitlines()[-1].rstrip())
+                             activity_line(commits[-1], 8, ZoneInfo("America/Sao_Paulo")))
             self.assertEqual(git(root, "--git-dir", str(bare), "rev-list", "--count", "main"), "4")
             remote_legacy = subprocess.run(["git", "--git-dir", str(bare), "show",
                                             "main:activity/2020/01/2020-01-01.md"],
                                            check=True, capture_output=True, text=True).stdout
-            self.assertEqual(remote_legacy, "[Legacy] older commit - 12345678  \n")
+            self.assertEqual(remote_legacy,
+                             f"{TABLE_HEADER}\n{TABLE_SEPARATOR}\n"
+                             "| — | Legacy | — | older commit | 12345678 |\n")
 
     def test_push_failure_reconciles_remote_success(self):
         with tempfile.TemporaryDirectory() as temp:
