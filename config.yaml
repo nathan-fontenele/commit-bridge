@@ -1,0 +1,22 @@
+azure_devops:
+  organization: "CHANGE_ME"
+  projects:
+    include: []
+    exclude: []
+  repositories:
+    include: []
+    exclude: []
+  branches:
+    include: []
+    exclude: []
+  authors:
+    emails:
+      - "CHANGE_ME@example.com"
+
+sync:
+  timezone: "America/Sao_Paulo"
+  lookback_days: 7
+
+output:
+  directory: "activity"
+  hash_length: 8
