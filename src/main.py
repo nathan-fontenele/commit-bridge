@@ -77,13 +77,30 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="List candidates without writing or pushing")
     parser.add_argument("--show-details", action="store_true",
                         help="Show commit details in local dry-run output; do not use in public CI")
+    parser.add_argument("--repair-format", action="store_true",
+                        help="Repair existing activity Markdown in a maintenance commit without querying Azure")
     parser.add_argument("--since", help="Historical backfill start date (YYYY-MM-DD, UTC)")
     args = parser.parse_args()
+    if args.repair_format and (args.dry_run or args.since or args.show_details):
+        parser.error("--repair-format cannot be combined with sync options")
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     source_root = Path(__file__).resolve().parents[1]
     destination = args.destination.resolve()
     if destination == source_root or not (destination / ".git").exists():
         parser.error("--destination must be a separate Git checkout")
+    if args.repair_format:
+        config = yaml.safe_load((source_root / args.config).read_text(encoding="utf-8"))
+        email = os.environ.get("GITHUB_COMMIT_EMAIL")
+        name = os.environ.get("GITHUB_COMMIT_NAME")
+        branch = os.environ.get("GITHUB_DEFAULT_BRANCH")
+        if not email or not name or not branch:
+            parser.error("GITHUB_COMMIT_EMAIL, GITHUB_COMMIT_NAME and GITHUB_DEFAULT_BRANCH are required")
+        publisher = Publisher(destination, branch=branch, email=email, name=name,
+                              output_dir=config["output"]["directory"],
+                              hash_length=int(config["output"]["hash_length"]),
+                              timezone=config["sync"]["timezone"])
+        publisher.repair_format()
+        return
     config, emails = read_config(source_root / args.config)
     pat = os.environ.get("AZURE_DEVOPS_PAT")
     if not pat:

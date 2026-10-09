@@ -66,6 +66,8 @@ O `config.yaml` versionado é um modelo seguro para publicação. Com as listas 
 
 O agendamento roda a cada hora, no minuto 17 UTC. A consulta normal cobre os últimos sete dias. Na execução manual, o campo `since` aceita `YYYY-MM-DD` em UTC para reprocessar um período mais antigo sem duplicar os commits já registrados.
 
+Se arquivos antigos aparecerem como um único parágrafo na visualização do GitHub, execute o workflow manualmente com **`repair_format: true`**, deixando `dry_run` desmarcado. O reparo não consulta o Azure nem altera o estado de sincronização; cria um único commit de manutenção com autor bot **somente se houver linhas a corrigir**. As próximas atividades já serão gravadas com quebras de linha visíveis.
+
 ### Prévia local detalhada
 
 Clone também o repositório privado de destino, como uma pasta irmã do projeto. Crie uma cópia local da configuração e edite nela a organização e os e-mails:

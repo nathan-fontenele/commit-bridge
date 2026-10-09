@@ -1,6 +1,7 @@
 """Render exactly one activity line per Azure commit."""
 
 from pathlib import Path
+import re
 
 
 def activity_path(root: Path, directory: str, sync_day):
@@ -16,10 +17,27 @@ def activity_line(commit, hash_length: int):
 
 def append_line(path: Path, line: str):
     path.parent.mkdir(parents=True, exist_ok=True)
-    existing = path.read_text(encoding="utf-8") if path.exists() else ""
-    if line in existing.splitlines():
+    existing = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    records = [record.rstrip() for record in existing if record.strip()]
+    if line in records:
         raise ValueError(f"Activity line already exists without state entry: {path}")
-    with path.open("a", encoding="utf-8") as output:
-        if existing and not existing.endswith("\n"):
-            output.write("\n")
-        output.write(line + "\n")
+    # Two trailing spaces turn a source newline into a visible break on GitHub.
+    # Re-render earlier entries in this day's file while adding the next real commit.
+    path.write_text("".join(f"{record}  \n" for record in [*records, line]), encoding="utf-8")
+
+
+def normalize_activity_files(directory: Path):
+    """Repair legacy daily files only when a new source commit will be published."""
+    changed = []
+    if not directory.exists():
+        return changed
+    for path in directory.rglob("*.md"):
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.md", path.name):
+            continue
+        original = path.read_text(encoding="utf-8")
+        records = [record.rstrip() for record in original.splitlines() if record.strip()]
+        normalized = "".join(f"{record}  \n" for record in records)
+        if normalized != original:
+            path.write_text(normalized, encoding="utf-8")
+            changed.append(path)
+    return changed

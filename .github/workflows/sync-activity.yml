@@ -9,6 +9,10 @@ on:
         description: "Preview matching commits without publishing"
         type: boolean
         default: false
+      repair_format:
+        description: "Repair existing Markdown formatting with one bot maintenance commit"
+        type: boolean
+        default: false
       since:
         description: "Optional UTC start date for historical backfill (YYYY-MM-DD)"
         type: string
@@ -61,10 +65,21 @@ jobs:
           GITHUB_COMMIT_EMAIL: ${{ secrets.SYNC_GIT_EMAIL }}
           GITHUB_COMMIT_NAME: ${{ vars.SYNC_GIT_NAME }}
           DRY_RUN: ${{ inputs.dry_run }}
+          REPAIR_FORMAT: ${{ inputs.repair_format }}
           SINCE: ${{ inputs.since }}
         run: |
           export GITHUB_DEFAULT_BRANCH="$(git -C ../destination branch --show-current)"
           test -n "$GITHUB_DEFAULT_BRANCH"
+          if [[ "$REPAIR_FORMAT" == "true" && ( "$DRY_RUN" == "true" || -n "$SINCE" ) ]]; then
+            echo "repair_format cannot be combined with dry_run or since" >&2
+            exit 1
+          fi
+          if [[ "$REPAIR_FORMAT" == "true" ]]; then
+            export GITHUB_COMMIT_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
+            export GITHUB_COMMIT_NAME="github-actions[bot]"
+            python -m src.main --destination ../destination --repair-format
+            exit
+          fi
           args=()
           if [[ "$DRY_RUN" == "true" ]]; then args+=(--dry-run); fi
           if [[ -n "$SINCE" ]]; then args+=(--since "$SINCE"); fi

@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .markdown_writer import activity_line, activity_path, append_line
+from .markdown_writer import activity_line, activity_path, append_line, normalize_activity_files
 from .state_manager import load_state, save_state
 
 
@@ -41,6 +41,23 @@ class Publisher:
         # Only local commits created by this publisher can be discarded here.
         self.git("reset", "--hard", f"origin/{self.branch}")
 
+    def repair_format(self):
+        """Publish one maintenance commit only when legacy Markdown actually changes."""
+        for attempt in range(3):
+            changed = normalize_activity_files(self.root / self.output_dir)
+            if not changed:
+                return False
+            self.git("add", "--", *(str(path.relative_to(self.root)) for path in changed))
+            self.git("commit", "-m", "chore: format activity Markdown")
+            pushed = self.git("push", "origin", f"HEAD:{self.branch}", check=False)
+            if pushed.returncode == 0:
+                return True
+            LOG.warning("Format repair push failed (attempt %s)", attempt + 1)
+            if attempt < 2:
+                time.sleep(2**attempt)
+                self.refresh()
+        raise RuntimeError("Could not publish Markdown format repair after three attempts")
+
     def publish(self, commit):
         for attempt in range(3):
             state = load_state(self.state_path)
@@ -48,13 +65,15 @@ class Publisher:
                 return False
             now = datetime.now(self.timezone)
             path = activity_path(self.root, self.output_dir, now.date())
+            repaired = normalize_activity_files(self.root / self.output_dir)
             append_line(path, activity_line(commit, self.hash_length))
             state["synced"][commit.key] = {
                 "synced_at": now.isoformat(timespec="seconds"),
                 "file": path.relative_to(self.root).as_posix(),
             }
             save_state(self.state_path, state)
-            self.git("add", "--", str(path.relative_to(self.root)), "state/synced_commits.json")
+            changed_paths = {str(changed.relative_to(self.root)) for changed in [*repaired, path]}
+            self.git("add", "--", *sorted(changed_paths), "state/synced_commits.json")
             self.git("commit", "-m", f"sync: [{commit.project_name}] {commit.message.splitlines()[0]}")
             pushed = self.git("push", "origin", f"HEAD:{self.branch}", check=False)
             if pushed.returncode == 0:
