@@ -35,7 +35,7 @@ class AzureClient:
                     return json.load(response), response.headers
             except HTTPError as exc:
                 if exc.code not in (408, 429, 500, 502, 503, 504):
-                    raise AzureError(f"Azure API returned HTTP {exc.code} for {path}") from exc
+                    raise AzureError(f"Azure API returned HTTP {exc.code}") from exc
                 retry_after = exc.headers.get("Retry-After", "")
                 delay = min(60, int(retry_after)) if retry_after.isdigit() else min(2**attempt, 16)
                 LOG.warning("Azure API HTTP %s; retrying in %ss", exc.code, delay)
@@ -43,7 +43,7 @@ class AzureClient:
                 delay = min(2**attempt, 16)
                 LOG.warning("Azure API unavailable (%s); retrying in %ss", type(exc).__name__, delay)
             if attempt == 4:
-                raise AzureError(f"Azure API failed after retries for {path}")
+                raise AzureError("Azure API failed after retries")
             self.pause(delay)
         raise AssertionError("unreachable")
 

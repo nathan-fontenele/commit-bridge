@@ -1,39 +1,100 @@
 # Azure DevOps Activity Sync
 
-Sincroniza commits reais do Azure DevOps para este repositório GitHub privado. Cada commit novo encontrado produz um commit Git com uma linha em `activity/YYYY/MM/YYYY-MM-DD.md` e sua chave em `state/synced_commits.json`. A data do arquivo é a data da publicação em `America/Sao_Paulo`.
+Automação em Python que registra, em um repositório GitHub **privado**, os commits feitos no Azure DevOps por e-mails de autoria configurados. Ela consulta todos os projetos, repositórios e branches acessíveis, cria uma linha Markdown para cada commit novo e publica **um commit Git no destino por atividade encontrada**. Dias sem atividade não geram arquivos ou commits artificiais.
 
-## Preparação
+O repositório com este código executa o GitHub Actions. Um segundo repositório, separado e privado, guarda os dados:
 
-1. Confirme que a política da empresa permite copiar nomes de projetos, mensagens e hashes para sua conta pessoal. Mantenha este repositório **privado**.
-2. Edite `config.yaml`: informe o nome da organização e todos os e-mails de autoria. As listas `include` vazias significam todos os recursos acessíveis; `exclude` remove nomes específicos. Branches são filtradas pelo nome sem `refs/heads/`.
-3. Crie um PAT do Azure DevOps com **Project and Team (read)** e **Code (read)**, limitado aos projetos necessários e com expiração curta. Salve-o no secret `AZURE_DEVOPS_PAT` deste repositório GitHub.
-4. Cadastre no secret `GITHUB_COMMIT_EMAIL` um e-mail verificado na conta GitHub que deve receber as contribuições. Configure a variável `GITHUB_COMMIT_NAME` com o nome do autor. O workflow usa o `GITHUB_TOKEN` com `contents: write` e publica na branch padrão. Se ela estiver protegida, permita o push do workflow ou ajuste a regra.
-5. Faça commit e push dos arquivos para a branch padrão. O agendamento executa a cada hora, no minuto 17 UTC. Também é possível iniciar em **Actions → Sync Azure DevOps activity → Run workflow**.
+```text
+commit-bridge/                 # código, configuração modelo e workflow
+daily-activity/                # exemplo de destino privado
+├── activity/2026/10/2026-10-08.md
+└── state/synced_commits.json
+```
 
-## Prévia e recuperação
+Cada linha do arquivo diário tem o formato `[projeto] primeira linha da mensagem - abcdef12`. A data do arquivo é a data da **sincronização em America/Sao_Paulo**; o estado evita duplicatas entre branches e execuções. Os commits do GitHub usam a data real em que são criados.
 
-Na execução manual, marque `dry_run` para ver os commits candidatos no log sem escrever arquivos ou publicar commits. As mensagens aparecerão nesse log; limite o acesso aos logs a quem pode ver esses metadados.
+## Requisitos
 
-O campo manual `since` aceita uma data UTC `YYYY-MM-DD` para reprocessamento histórico. Sem esse campo, a busca usa os últimos sete dias. Commits antigos fora dessa janela exigem um backfill manual. O estado impede republicação de commits já registrados, inclusive quando aparecem em mais de uma branch.
+- Python 3.12 ou superior e Git para execução local.
+- Acesso de leitura aos projetos e repositórios relevantes no Azure DevOps.
+- Um repositório GitHub para este código e outro **privado** para as atividades.
+- Autorização da sua organização para exportar nomes de projetos, mensagens e hashes de commits para uma conta GitHub pessoal.
 
-Para executar localmente:
+## 1. Faça um fork e clone o código
+
+Se você quer executar a automação na sua conta, use **Fork** na página deste repositório no GitHub. O fork será o repositório que executará o workflow. Depois clone **o seu fork**:
 
 ```bash
+git clone https://github.com/SEU_USUARIO/commit-bridge.git
+cd commit-bridge
+```
+
+Se você já possui uma cópia do projeto na sua conta, basta cloná-la; não precisa fazer outro fork. Um clone local, sozinho, não cria um workflow na sua conta GitHub. A disponibilidade do botão **Fork** para repositórios privados depende das permissões do proprietário.
+
+## 2. Crie o repositório privado de destino
+
+No GitHub, crie um **novo repositório privado** para as atividades, por exemplo `SEU_USUARIO/daily-activity`. Inicialize-o com um README para que tenha uma branch padrão e um commit inicial. Os arquivos `activity/` e `state/` serão criados pela automação nesse repositório, não no fork do código. O workflow interrompe a execução se o destino não for privado.
+
+## 3. Crie os tokens de acesso
+
+1. No Azure DevOps, acesse **User settings → Personal access tokens → New Token**. Selecione a organização correta, uma validade curta e somente **Project and Team (read)** e **Code (read)**. Copie o PAT ao criá-lo. [Instruções da Microsoft](https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops).
+2. No GitHub, acesse **Settings → Developer settings → Personal access tokens → Fine-grained tokens**. Escolha seu usuário como proprietário, selecione **somente o repositório de destino** e conceda **Contents: Read and write**. A permissão **Metadata: Read** é automática. Copie o token ao criá-lo. [Instruções do GitHub](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
+
+O `GITHUB_TOKEN` do workflow pertence ao repositório do código e não substitui o token para acessar um [segundo repositório privado](https://github.com/actions/checkout).
+
+## 4. Configure o seu fork no GitHub
+
+No **fork do código**, abra **Settings → Secrets and variables → Actions**. Cadastre os valores abaixo em **Repository secrets**; `SYNC_GIT_NAME` deve ser criado na aba **Variables**. Nenhum token deve ser escrito em `config.yaml` ou enviado em um commit. [Como cadastrar secrets](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets).
+
+| Tipo | Nome | Valor de exemplo |
+| --- | --- | --- |
+| Secret | `AZURE_DEVOPS_PAT` | PAT do Azure DevOps criado no passo 3 |
+| Secret | `AZURE_DEVOPS_ORGANIZATION` | `minha-organizacao`, de `dev.azure.com/minha-organizacao` |
+| Secret | `AZURE_AUTHOR_EMAILS` | `eu@empresa.com` ou vários e-mails separados por vírgula |
+| Secret | `ACTIVITY_REPOSITORY` | `SEU_USUARIO/daily-activity` |
+| Secret | `ACTIVITY_REPOSITORY_TOKEN` | Token GitHub criado no passo 3 |
+| Secret | `SYNC_GIT_EMAIL` | E-mail associado à sua conta GitHub |
+| Variable | `SYNC_GIT_NAME` | Nome que assinará os commits no destino |
+
+O `config.yaml` versionado é um modelo seguro para publicação. Com as listas `include: []`, a busca cobre todos os projetos, repositórios e branches acessíveis ao PAT; use `include` e `exclude` para restringir nomes quando necessário. No Actions, a organização e os e-mails vêm dos secrets e substituem os exemplos do arquivo.
+
+## 5. Teste e ative a sincronização
+
+1. Garanta que o workflow esteja na **branch padrão do seu fork** e que o GitHub Actions esteja habilitado. Em forks de repositórios públicos, workflows agendados [começam desabilitados](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows?tool=webui); habilite o workflow antes de esperar a execução automática.
+2. No fork, abra **Actions → Sync Azure DevOps activity → Run workflow**, marque `dry_run: true` e execute. Isso testa autenticação e descoberta sem publicar. Por segurança, os logs do Actions não exibem nomes, mensagens, SHAs do Azure nem contagens de atividade.
+3. Para conferir **quais** commits seriam publicados, use a prévia local descrita abaixo em um ambiente privado. Depois execute o workflow com `dry_run: false` e confira o repositório de destino. Se não houver commit novo, ele não será modificado.
+
+O agendamento roda a cada hora, no minuto 17 UTC. A consulta normal cobre os últimos sete dias. Na execução manual, o campo `since` aceita `YYYY-MM-DD` em UTC para reprocessar um período mais antigo sem duplicar os commits já registrados.
+
+### Prévia local detalhada
+
+Clone também o repositório privado de destino, como uma pasta irmã do projeto. Crie uma cópia local da configuração e edite nela a organização e os e-mails:
+
+```bash
+git clone https://github.com/SEU_USUARIO/daily-activity.git ../daily-activity
 python -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
-export AZURE_DEVOPS_PAT='...'
-python -m src.main --dry-run
-python -m unittest discover -s tests -v
+cp config.yaml config.local.yaml
+# Edite config.local.yaml; esse arquivo é ignorado pelo Git.
+export AZURE_DEVOPS_PAT='SEU_PAT_AZURE'
+python -m src.main --config config.local.yaml --destination ../daily-activity --dry-run --show-details
 ```
 
-Uma publicação local também requer `GITHUB_COMMIT_EMAIL`, `GITHUB_COMMIT_NAME`, `GITHUB_DEFAULT_BRANCH` e acesso de push ao remoto `origin`. Execute em um checkout limpo: o publicador sincroniza o checkout com `origin/<branch>` antes de gravar. O workflow atende a essas condições automaticamente.
+O modo `--show-details` exibe metadados corporativos no terminal; não o use em um CI público. Uma publicação local também exige `GITHUB_COMMIT_EMAIL`, `GITHUB_COMMIT_NAME`, `GITHUB_DEFAULT_BRANCH` e acesso de push ao remoto do destino.
 
-## Garantias e limites
+## Como a sincronização evita duplicatas
 
-- Os commits são filtrados pelo `author.email` e ordenados pelo `committer.date`. A busca cobre as branches acessíveis configuradas, com paginação; a chave `organização:repositório:SHA` remove repetições entre branches.
-- A linha e o estado são gravados no mesmo commit Git. Após uma resposta incerta do push, o publicador busca o estado remoto antes de tentar novamente. Nenhum arquivo é criado quando não há atividade nova.
-- O repositório precisa estar privado e o e-mail de autoria associado à conta GitHub. O GitHub aplica suas próprias [regras de atribuição de contribuições](https://docs.github.com/en/account-and-profile/reference/profile-contributions-reference); a aparição no gráfico não é garantida pelo script. A opção de exibir contribuições privadas no perfil é controlada na conta GitHub.
-- Commits que existam apenas em branches apagadas antes da sincronização não são encontrados. O agendamento do GitHub Actions pode [atrasar ou perder execuções](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows); use `since` para recuperar intervalos maiores que a janela padrão.
+O cliente usa a API REST 7.1 do Azure DevOps para listar projetos, repositórios, branches e commits, com paginação e retries. O filtro compara `author.email`; a ordenação usa `committer.date`. A chave `organização:repositório:SHA` elimina repetição entre branches. A cada atividade nova, o publicador adiciona a linha Markdown e a chave no estado **no mesmo commit Git**; se o push falhar, consulta novamente o estado remoto antes de tentar outra vez.
 
-Referências: [projetos](https://learn.microsoft.com/en-us/rest/api/azure/devops/core/projects/list?view=azure-devops-rest-7.1), [repositórios](https://learn.microsoft.com/en-us/rest/api/azure/devops/git/repositories/list?view=azure-devops-rest-7.1), [refs](https://learn.microsoft.com/en-us/rest/api/azure/devops/git/refs/list?view=azure-devops-rest-7.1), [commits](https://learn.microsoft.com/en-us/rest/api/azure/devops/git/commits/get-commits?view=azure-devops-rest-7.1).
+Commits presentes apenas em branches apagadas antes da busca não são encontrados. Execuções agendadas podem [atrasar ou ser descartadas](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows); use `since` quando o atraso exceder a janela padrão. O gráfico do GitHub segue suas [regras de atribuição de contribuições](https://docs.github.com/en/account-and-profile/reference/profile-contributions-reference), inclusive associação do e-mail do commit à conta.
+
+## Antes de publicar o código
+
+O repositório de atividades deve permanecer privado. Revise também o histórico Git e as execuções antigas do Actions antes de tornar **o repositório do código** público: [o histórico e os logs do Actions ficam visíveis](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility). `config.local.yaml`, `.env`, tokens e arquivos de atividade não devem entrar no repositório do código.
+
+Para rodar os testes locais:
+
+```bash
+python -m unittest discover -s tests -v
+```

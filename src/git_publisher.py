@@ -33,7 +33,7 @@ class Publisher:
         result = subprocess.run(["git", *args], cwd=self.root, text=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if check and result.returncode:
-            raise RuntimeError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+            raise RuntimeError(f"git {args[0]} failed with status {result.returncode}")
         return result
 
     def refresh(self):
@@ -45,7 +45,6 @@ class Publisher:
         for attempt in range(3):
             state = load_state(self.state_path)
             if commit.key in state["synced"]:
-                LOG.info("Already published: %s", commit.key)
                 return False
             now = datetime.now(self.timezone)
             path = activity_path(self.root, self.output_dir, now.date())
@@ -59,12 +58,11 @@ class Publisher:
             self.git("commit", "-m", f"sync: [{commit.project_name}] {commit.message.splitlines()[0]}")
             pushed = self.git("push", "origin", f"HEAD:{self.branch}", check=False)
             if pushed.returncode == 0:
-                LOG.info("Published %s", commit.key)
                 return True
-            LOG.warning("Push failed for %s (attempt %s): %s", commit.key, attempt + 1, pushed.stderr.strip())
+            LOG.warning("Push failed (attempt %s)", attempt + 1)
             # Fetch the authoritative remote state. If the push actually succeeded,
             # the state entry will be present and the next loop will skip it.
             if attempt < 2:
                 time.sleep(2**attempt)
                 self.refresh()
-        raise RuntimeError(f"Could not publish {commit.key} after three attempts")
+        raise RuntimeError("Could not publish a source commit after three attempts")

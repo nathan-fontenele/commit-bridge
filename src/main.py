@@ -25,6 +25,12 @@ def allowed(name, rules):
 def read_config(path: Path):
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
     azure = config["azure_devops"]
+    organization_override = os.environ.get("AZURE_DEVOPS_ORGANIZATION")
+    authors_override = os.environ.get("AZURE_AUTHOR_EMAILS")
+    if organization_override:
+        azure["organization"] = organization_override.strip()
+    if authors_override:
+        azure["authors"]["emails"] = authors_override.split(",")
     organization = azure["organization"]
     emails = {value.strip().casefold() for value in azure["authors"]["emails"]}
     if not organization or organization == "CHANGE_ME" or not emails or any("CHANGE_ME" in x for x in emails):
@@ -48,7 +54,6 @@ def collect(client, config, emails, *, earliest):
         for repository in client.repositories(project["id"]):
             if repository.get("isDisabled") or not allowed(repository["name"], azure.get("repositories", {})):
                 continue
-            LOG.info("Scanning %s/%s", project["name"], repository["name"])
             for branch in client.branches(project["id"], repository["id"]):
                 if not allowed(branch, azure.get("branches", {})):
                     continue
@@ -67,12 +72,19 @@ def collect(client, config, emails, *, earliest):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=Path("config.yaml"))
+    parser.add_argument("--destination", type=Path, required=True,
+                        help="Checkout of the separate private GitHub destination repository")
     parser.add_argument("--dry-run", action="store_true", help="List candidates without writing or pushing")
+    parser.add_argument("--show-details", action="store_true",
+                        help="Show commit details in local dry-run output; do not use in public CI")
     parser.add_argument("--since", help="Historical backfill start date (YYYY-MM-DD, UTC)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    root = Path(__file__).resolve().parents[1]
-    config, emails = read_config(root / args.config)
+    source_root = Path(__file__).resolve().parents[1]
+    destination = args.destination.resolve()
+    if destination == source_root or not (destination / ".git").exists():
+        parser.error("--destination must be a separate Git checkout")
+    config, emails = read_config(source_root / args.config)
     pat = os.environ.get("AZURE_DEVOPS_PAT")
     if not pat:
         parser.error("AZURE_DEVOPS_PAT is required")
@@ -82,12 +94,16 @@ def main():
         earliest = datetime.now(timezone.utc) - timedelta(days=int(config["sync"]["lookback_days"]))
     client = AzureClient(config["azure_devops"]["organization"], pat)
     commits = collect(client, config, emails, earliest=earliest)
-    state = load_state(root / "state/synced_commits.json")
+    state = load_state(destination / "state/synced_commits.json")
     pending = [commit for commit in commits if commit.key not in state["synced"]]
-    LOG.info("Found %s unique commits; %s pending", len(commits), len(pending))
+    LOG.info("Scan completed")
     if args.dry_run:
-        for commit in pending:
-            LOG.info("Would publish %s %s %s", commit.project_name, commit.sha, commit.message)
+        if args.show_details:
+            LOG.info("Found %s unique commits; %s pending", len(commits), len(pending))
+            for commit in pending:
+                LOG.info("Would publish %s %s %s", commit.project_name, commit.sha, commit.message)
+        else:
+            LOG.info("Dry run completed without publishing")
         return
     if not pending:
         return
@@ -96,7 +112,7 @@ def main():
     branch = os.environ.get("GITHUB_DEFAULT_BRANCH")
     if not email or not name or not branch:
         parser.error("GITHUB_COMMIT_EMAIL, GITHUB_COMMIT_NAME and GITHUB_DEFAULT_BRANCH are required")
-    publisher = Publisher(root, branch=branch, email=email, name=name,
+    publisher = Publisher(destination, branch=branch, email=email, name=name,
                           output_dir=config["output"]["directory"],
                           hash_length=int(config["output"]["hash_length"]),
                           timezone=config["sync"]["timezone"])
