@@ -26,7 +26,7 @@ class MainTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             destination = Path(temp)
             subprocess.run(["git", "init", str(destination)], check=True, capture_output=True)
-            commit = Commit("org", "project", "Project", "repo", "a" * 40,
+            commit = Commit("org", "project", "Project", "repo", "sample-repo", "a" * 40,
                             "real change", "me@example.com", datetime.now(timezone.utc))
             (destination / "state").mkdir()
             (destination / "state/synced_commits.json").write_text(json.dumps({
@@ -45,7 +45,7 @@ class MainTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             destination = Path(temp)
             subprocess.run(["git", "init", str(destination)], check=True, capture_output=True)
-            commit = Commit("private-org", "project", "Confidential Project", "repo", "a" * 40,
+            commit = Commit("private-org", "project", "Confidential Project", "repo", "sample-repo", "a" * 40,
                             "secret commit message", "me@example.com", datetime.now(timezone.utc))
             config = {"azure_devops": {"organization": "private-org"}, "sync": {"lookback_days": 7}}
             with patch.object(sys, "argv", ["sync", "--destination", str(destination), "--dry-run"]), \

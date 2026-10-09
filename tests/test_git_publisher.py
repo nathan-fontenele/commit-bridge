@@ -61,7 +61,7 @@ class PublisherTests(unittest.TestCase):
             git(checkout, "commit", "-m", "initial")
             git(checkout, "push", "origin", "HEAD:main")
             git(checkout, "checkout", "main")
-            commits = [Commit("org", "project", "Payment API", "repo", x * 40,
+            commits = [Commit("org", "project", "Payment API", "repo", "payment-service", x * 40,
                               f"feat: change {x}", "me@example.com", datetime.now(timezone.utc))
                        for x in "abc"]
             publisher = Publisher(checkout, branch="main", email="verified@example.com", name="Me",
@@ -76,6 +76,10 @@ class PublisherTests(unittest.TestCase):
             self.assertEqual(len(activity), 2)
             current = next(path for path in activity if path != legacy)
             self.assertEqual(len(current.read_text().splitlines()), 3)
+            first_line = current.read_text().splitlines()[0].rstrip()
+            self.assertIn("[Payment API] [payment-service] [feat: change a] [aaaaaaaa]", first_line)
+            self.assertEqual(git(checkout, "log", "-1", "--format=%s"),
+                             current.read_text().splitlines()[-1].rstrip())
             self.assertEqual(git(root, "--git-dir", str(bare), "rev-list", "--count", "main"), "4")
             remote_legacy = subprocess.run(["git", "--git-dir", str(bare), "show",
                                             "main:activity/2020/01/2020-01-01.md"],
@@ -99,7 +103,7 @@ class PublisherTests(unittest.TestCase):
             git(checkout, "checkout", "main")
             publisher = Publisher(checkout, branch="main", email="verified@example.com", name="Me",
                                   output_dir="activity", hash_length=8, timezone="America/Sao_Paulo")
-            commit = Commit("org", "project", "Payment API", "repo", "a" * 40,
+            commit = Commit("org", "project", "Payment API", "repo", "payment-service", "a" * 40,
                             "feat: test", "me@example.com", datetime.now(timezone.utc))
             original_git = publisher.git
 

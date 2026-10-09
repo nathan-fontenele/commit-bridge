@@ -63,7 +63,8 @@ def collect(client, config, emails, *, earliest):
                         raw = client.commit(project["id"], repository["id"], raw["commitId"])
                     commit = normalize(raw, organization_id=azure["organization"],
                                        project_id=project["id"], project_name=project["name"],
-                                       repository_id=repository["id"], emails=emails, earliest=earliest)
+                                       repository_id=repository["id"], repository_name=repository["name"],
+                                       emails=emails, earliest=earliest)
                     if commit:
                         found.append(commit)
     return unique_sorted(found)

@@ -14,11 +14,13 @@ class FilterTests(unittest.TestCase):
             "comment": "feat: original first line\nmore detail",
         }
         self.kwargs = dict(organization_id="org", project_id="project-id", project_name="Payment API",
-                           repository_id="repo-id", emails={"me@example.com"}, earliest=self.earliest)
+                           repository_id="repo-id", repository_name="payment-service",
+                           emails={"me@example.com"}, earliest=self.earliest)
 
     def test_author_date_message_and_identity(self):
         commit = normalize(self.raw, **self.kwargs)
         self.assertEqual(commit.message, "feat: original first line")
+        self.assertEqual(commit.repository_name, "payment-service")
         self.assertEqual(commit.key, f"org:repo-id:{'a' * 40}")
         self.assertIsNone(normalize({**self.raw, "author": {"email": "other@example.com"}}, **self.kwargs))
         self.assertIsNone(normalize({**self.raw, "committer": {"date": "2026-09-30T00:00:00Z"}}, **self.kwargs))

@@ -66,7 +66,8 @@ class Publisher:
             now = datetime.now(self.timezone)
             path = activity_path(self.root, self.output_dir, now.date())
             repaired = normalize_activity_files(self.root / self.output_dir)
-            append_line(path, activity_line(commit, self.hash_length))
+            line = activity_line(commit, self.hash_length, self.timezone)
+            append_line(path, line)
             state["synced"][commit.key] = {
                 "synced_at": now.isoformat(timespec="seconds"),
                 "file": path.relative_to(self.root).as_posix(),
@@ -74,7 +75,7 @@ class Publisher:
             save_state(self.state_path, state)
             changed_paths = {str(changed.relative_to(self.root)) for changed in [*repaired, path]}
             self.git("add", "--", *sorted(changed_paths), "state/synced_commits.json")
-            self.git("commit", "-m", f"sync: [{commit.project_name}] {commit.message.splitlines()[0]}")
+            self.git("commit", "-m", line)
             pushed = self.git("push", "origin", f"HEAD:{self.branch}", check=False)
             if pushed.returncode == 0:
                 return True

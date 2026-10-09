@@ -1,11 +1,22 @@
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
-from src.markdown_writer import append_line, normalize_activity_files
+from src.commit_filter import Commit
+from src.markdown_writer import activity_line, append_line, normalize_activity_files
 
 
 class MarkdownWriterTests(unittest.TestCase):
+    def test_activity_line_has_original_commit_time_project_repository_message_and_hash(self):
+        commit = Commit("org", "project", "Payment API", "repo-id", "payment-service",
+                        "a" * 40, "feat: add invoice validation", "me@example.com",
+                        datetime(2026, 10, 9, 15, 30, tzinfo=timezone.utc))
+        self.assertEqual(activity_line(commit, 8, ZoneInfo("America/Sao_Paulo")),
+                         "[2026-10-09 12:30:00 -03:00] [Payment API] [payment-service] "
+                         "[feat: add invoice validation] [aaaaaaaa]")
+
     def test_legacy_entries_gain_visible_breaks_with_next_real_entry(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "activity/2026/10/2026-10-09.md"

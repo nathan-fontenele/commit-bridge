@@ -10,6 +10,7 @@ class Commit:
     project_id: str
     project_name: str
     repository_id: str
+    repository_name: str
     sha: str
     message: str
     author_email: str
@@ -20,7 +21,8 @@ class Commit:
         return f"{self.organization_id}:{self.repository_id}:{self.sha}"
 
 
-def normalize(raw, *, organization_id, project_id, project_name, repository_id, emails, earliest):
+def normalize(raw, *, organization_id, project_id, project_name, repository_id, repository_name,
+              emails, earliest):
     sha = raw.get("commitId", "").lower()
     email = raw.get("author", {}).get("email", "").strip().casefold()
     date_text = raw.get("committer", {}).get("date", "")
@@ -37,7 +39,7 @@ def normalize(raw, *, organization_id, project_id, project_name, repository_id, 
     message = raw.get("comment", "").splitlines()
     if not message or not message[0]:
         return None
-    return Commit(organization_id, project_id, project_name, repository_id, sha,
+    return Commit(organization_id, project_id, project_name, repository_id, repository_name, sha,
                   message[0], email, committed_at)
 
 

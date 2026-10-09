@@ -11,7 +11,7 @@ daily-activity/                # exemplo de destino privado
 └── state/synced_commits.json
 ```
 
-Cada linha do arquivo diário tem o formato `[projeto] primeira linha da mensagem - abcdef12`. A data do arquivo é a data da **sincronização em America/Sao_Paulo**; o estado evita duplicatas entre branches e execuções. Os commits do GitHub usam a data real em que são criados.
+Cada linha do arquivo diário e a mensagem do commit correspondente no GitHub seguem o formato `[AAAA-MM-DD HH:MM:SS -03:00] [projeto] [repositório do Azure] [primeira linha da mensagem] [abcdef12]`. A data e hora na linha são as do **commit original no Azure**, convertidas para `America/Sao_Paulo`; a data do arquivo é a da **sincronização** nesse fuso. O estado evita duplicatas entre branches e execuções. Os commits do GitHub usam a data real em que são criados. Registros antigos mantêm o formato anterior.
 
 ## Requisitos
 

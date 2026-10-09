@@ -8,11 +8,17 @@ def activity_path(root: Path, directory: str, sync_day):
     return root / directory / sync_day.strftime("%Y/%m/%Y-%m-%d.md")
 
 
-def activity_line(commit, hash_length: int):
+def activity_line(commit, hash_length: int, timezone):
     # A commit's first message line is preserved; control characters cannot form a second row.
     project = "".join(char if char.isprintable() else " " for char in commit.project_name)
+    repository = "".join(char if char.isprintable() else " " for char in commit.repository_name)
     message = "".join(char if char.isprintable() else " " for char in commit.message)
-    return f"[{project}] {message} - {commit.sha[:hash_length]}"
+    local_time = commit.committed_at.astimezone(timezone)
+    committed_at = local_time.strftime("%Y-%m-%d %H:%M:%S")
+    utc_offset = local_time.strftime("%z")
+    offset = f"{utc_offset[:3]}:{utc_offset[3:]}"
+    return (f"[{committed_at} {offset}] [{project}] [{repository}] "
+            f"[{message}] [{commit.sha[:hash_length]}]")
 
 
 def append_line(path: Path, line: str):
