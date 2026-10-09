@@ -7,7 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .markdown_writer import activity_line, activity_path, append_line, normalize_activity_files
+from .markdown_writer import (activity_line, activity_path, append_line,
+                              normalize_activity_files, repair_activity_files)
 from .state_manager import load_state, save_state
 
 
@@ -41,10 +42,15 @@ class Publisher:
         # Only local commits created by this publisher can be discarded here.
         self.git("reset", "--hard", f"origin/{self.branch}")
 
-    def repair_format(self):
+    def repair_format(self, resolve=None):
         """Publish one maintenance commit only when legacy Markdown actually changes."""
         for attempt in range(3):
-            changed = normalize_activity_files(self.root / self.output_dir)
+            if resolve:
+                changed = repair_activity_files(self.root, self.output_dir,
+                                                load_state(self.state_path), resolve,
+                                                self.hash_length, self.timezone)
+            else:
+                changed = normalize_activity_files(self.root / self.output_dir)
             if not changed:
                 return False
             self.git("add", "--", *(str(path.relative_to(self.root)) for path in changed))

@@ -10,7 +10,7 @@ on:
         type: boolean
         default: false
       repair_format:
-        description: "Repair existing Markdown formatting with one bot maintenance commit"
+        description: "Upgrade old activity rows using Azure metadata (one bot commit)"
         type: boolean
         default: false
       since:

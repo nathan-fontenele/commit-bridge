@@ -79,7 +79,7 @@ def main():
     parser.add_argument("--show-details", action="store_true",
                         help="Show commit details in local dry-run output; do not use in public CI")
     parser.add_argument("--repair-format", action="store_true",
-                        help="Repair existing activity Markdown in a maintenance commit without querying Azure")
+                        help="Upgrade saved activity rows from Azure in one maintenance commit")
     parser.add_argument("--since", help="Historical backfill start date (YYYY-MM-DD, UTC)")
     args = parser.parse_args()
     if args.repair_format and (args.dry_run or args.since or args.show_details):
@@ -90,7 +90,10 @@ def main():
     if destination == source_root or not (destination / ".git").exists():
         parser.error("--destination must be a separate Git checkout")
     if args.repair_format:
-        config = yaml.safe_load((source_root / args.config).read_text(encoding="utf-8"))
+        config, _ = read_config(source_root / args.config)
+        pat = os.environ.get("AZURE_DEVOPS_PAT")
+        if not pat:
+            parser.error("AZURE_DEVOPS_PAT is required to repair saved activity rows")
         email = os.environ.get("GITHUB_COMMIT_EMAIL")
         name = os.environ.get("GITHUB_COMMIT_NAME")
         branch = os.environ.get("GITHUB_DEFAULT_BRANCH")
@@ -100,7 +103,31 @@ def main():
                               output_dir=config["output"]["directory"],
                               hash_length=int(config["output"]["hash_length"]),
                               timezone=config["sync"]["timezone"])
-        publisher.repair_format()
+        azure = config["azure_devops"]
+        client = AzureClient(azure["organization"], pat)
+        repositories = {}
+        for project in client.projects():
+            for repository in client.repositories(project["id"]):
+                repositories[repository["id"]] = (project, repository)
+
+        def resolve(key):
+            organization_id, repository_id, sha = key.rsplit(":", 2)
+            if organization_id.casefold() != azure["organization"].casefold():
+                raise ValueError(f"State entry belongs to another Azure organization: {key}")
+            if repository_id not in repositories:
+                raise ValueError(f"Azure repository for saved commit is inaccessible: {key}")
+            project, repository = repositories[repository_id]
+            raw = client.commit(project["id"], repository_id, sha)
+            author_email = raw.get("author", {}).get("email", "").strip().casefold()
+            commit = normalize(raw, organization_id=organization_id,
+                               project_id=project["id"], project_name=project["name"],
+                               repository_id=repository_id, repository_name=repository["name"],
+                               emails={author_email}, earliest=datetime.min.replace(tzinfo=timezone.utc))
+            if commit is None:
+                raise ValueError(f"Azure returned invalid data for saved commit: {key}")
+            return commit
+
+        publisher.repair_format(resolve=resolve)
         return
     config, emails = read_config(source_root / args.config)
     pat = os.environ.get("AZURE_DEVOPS_PAT")

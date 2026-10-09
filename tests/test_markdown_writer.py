@@ -5,10 +5,35 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from src.commit_filter import Commit
-from src.markdown_writer import activity_line, append_line, normalize_activity_files
+from src.markdown_writer import (activity_line, append_line, normalize_activity_files,
+                                 repair_activity_files)
 
 
 class MarkdownWriterTests(unittest.TestCase):
+    def test_failed_repair_does_not_partially_rewrite_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            one = root / "activity/2026/10/2026-10-08.md"
+            two = root / "activity/2026/10/2026-10-09.md"
+            one.parent.mkdir(parents=True)
+            one.write_text("[Project] first - aaaaaaaa\n", encoding="utf-8")
+            two.write_text("[Project] second - bbbbbbbb\n", encoding="utf-8")
+            state = {"synced": {
+                "org:repo:" + "a" * 40: {"file": one.relative_to(root).as_posix()},
+                "org:repo:" + "b" * 40: {"file": two.relative_to(root).as_posix()},
+            }}
+            def resolve(key):
+                if key.endswith("b" * 40):
+                    raise RuntimeError("Azure commit unavailable")
+                return Commit("org", "project", "Project", "repo", "repository", "a" * 40,
+                              "first", "me@example.com", datetime(2026, 10, 8, tzinfo=timezone.utc))
+
+            with self.assertRaisesRegex(RuntimeError, "unavailable"):
+                repair_activity_files(root, "activity", state, resolve, 8,
+                                      ZoneInfo("America/Sao_Paulo"))
+            self.assertEqual(one.read_text(), "[Project] first - aaaaaaaa\n")
+            self.assertEqual(two.read_text(), "[Project] second - bbbbbbbb\n")
+
     def test_activity_line_has_original_commit_time_project_repository_message_and_hash(self):
         commit = Commit("org", "project", "Payment API", "repo-id", "payment-service",
                         "a" * 40, "feat: add invoice validation", "me@example.com",

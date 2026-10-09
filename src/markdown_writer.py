@@ -47,3 +47,51 @@ def normalize_activity_files(directory: Path):
             path.write_text(normalized, encoding="utf-8")
             changed.append(path)
     return changed
+
+
+def repair_activity_files(root: Path, directory: str, state, resolve, hash_length: int, timezone):
+    """Upgrade tracked legacy rows using their original Azure commits, then fix line breaks."""
+    activity_root = (root / directory).resolve()
+    entries_by_file = {}
+    for key, entry in state["synced"].items():
+        try:
+            organization, repository_id, sha = key.rsplit(":", 2)
+            relative = Path(entry["file"])
+        except (ValueError, KeyError, TypeError) as exc:
+            raise ValueError(f"Invalid state entry: {key}") from exc
+        if not organization or not repository_id or len(sha) != 40 or any(
+                char not in "0123456789abcdef" for char in sha):
+            raise ValueError(f"Invalid state key: {key}")
+        path = (root / relative).resolve()
+        if not path.is_relative_to(activity_root) or not re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}\.md", path.name):
+            raise ValueError(f"Invalid activity file in state: {relative}")
+        entries_by_file.setdefault(path, []).append((key, sha))
+
+    updates = {}
+    paths = set(entries_by_file)
+    if activity_root.exists():
+        paths.update(path.resolve() for path in activity_root.rglob("*.md")
+                     if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.md", path.name))
+    for path in sorted(paths):
+        if not path.is_file():
+            raise ValueError(f"Missing activity file referenced by state: {path}")
+        original = path.read_text(encoding="utf-8")
+        rows = [row.rstrip() for row in original.splitlines() if row.strip()]
+        for key, sha in entries_by_file.get(path, []):
+            short_sha = sha[:hash_length]
+            old = [index for index, row in enumerate(rows) if row.endswith(f" - {short_sha}")]
+            new = [index for index, row in enumerate(rows) if row.endswith(f"[{short_sha}]")]
+            if len(old) + len(new) != 1:
+                raise ValueError(f"Could not uniquely locate saved commit {key} in {path}")
+            if old:
+                commit = resolve(key)
+                if commit.key != key:
+                    raise ValueError(f"Azure commit identity differs from saved state: {key}")
+                rows[old[0]] = activity_line(commit, hash_length, timezone)
+        updated = "".join(f"{row}  \n" for row in rows)
+        if updated != original:
+            updates[path] = updated
+    for path, content in updates.items():
+        path.write_text(content, encoding="utf-8")
+    return list(updates)
