@@ -71,7 +71,7 @@ class MainTests(unittest.TestCase):
             (destination / "state/synced_commits.json").write_text(json.dumps({
                 "version": 1, "synced": {commit.key: {"synced_at": "today", "file": "activity/today.md"}}
             }))
-            config = {"azure_devops": {"organization": "org"}, "sync": {"lookback_days": 7}}
+            config = {"azure_devops": {"organization": "org"}, "sync": {"lookback_days": 7, "timezone": "America/Sao_Paulo"}}
             with patch.object(sys, "argv", ["sync", "--destination", str(destination)]), \
                  patch.dict("src.main.os.environ", {"AZURE_DEVOPS_PAT": "fake"}), \
                  patch("src.main.read_config", return_value=(config, {"me@example.com"})), \
@@ -86,7 +86,7 @@ class MainTests(unittest.TestCase):
             subprocess.run(["git", "init", str(destination)], check=True, capture_output=True)
             commit = Commit("private-org", "project", "Confidential Project", "repo", "sample-repo", "a" * 40,
                             "secret commit message", "me@example.com", datetime.now(timezone.utc))
-            config = {"azure_devops": {"organization": "private-org"}, "sync": {"lookback_days": 7}}
+            config = {"azure_devops": {"organization": "private-org"}, "sync": {"lookback_days": 7, "timezone": "America/Sao_Paulo"}}
             with patch.object(sys, "argv", ["sync", "--destination", str(destination), "--dry-run"]), \
                  patch.dict("src.main.os.environ", {"AZURE_DEVOPS_PAT": "fake"}), \
                  patch("src.main.read_config", return_value=(config, {"me@example.com"})), \

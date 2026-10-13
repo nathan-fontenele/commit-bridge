@@ -3,8 +3,9 @@
 import argparse
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -48,6 +49,7 @@ def read_config(path: Path):
 def collect(client, config, emails, *, earliest):
     azure = config["azure_devops"]
     found = []
+    seen = other_author = 0
     for project in client.projects():
         if not allowed(project["name"], azure.get("projects", {})):
             continue
@@ -57,16 +59,22 @@ def collect(client, config, emails, *, earliest):
             for branch in client.branches(project["id"], repository["id"]):
                 if not allowed(branch, azure.get("branches", {})):
                     continue
-                for raw in client.commits(project["id"], repository["id"], branch, earliest.isoformat()):
+                for raw in client.commits(project["id"], repository["id"], branch,
+                                          earliest.strftime("%Y-%m-%dT%H:%M:%SZ")):
                     # Azure can truncate a long first line in list responses.
                     if raw.get("commentTruncated"):
                         raw = client.commit(project["id"], repository["id"], raw["commitId"])
+                    seen += 1
+                    if raw.get("author", {}).get("email", "").strip().casefold() not in emails:
+                        other_author += 1
                     commit = normalize(raw, organization_id=azure["organization"],
                                        project_id=project["id"], project_name=project["name"],
                                        repository_id=repository["id"], repository_name=repository["name"],
                                        emails=emails, earliest=earliest)
                     if commit:
                         found.append(commit)
+    LOG.info("Azure returned %s commits since %s; %s by other authors; %s matched",
+             seen, earliest.isoformat(), other_author, len(found))
     return unique_sorted(found)
 
 
@@ -136,7 +144,10 @@ def main():
     if args.since:
         earliest = datetime.fromisoformat(args.since).replace(tzinfo=timezone.utc)
     else:
-        earliest = datetime.now(timezone.utc) - timedelta(days=int(config["sync"]["lookback_days"]))
+        # Window starts at local midnight, so commits made today are always inside it.
+        local = ZoneInfo(config["sync"]["timezone"])
+        first_day = datetime.now(local).date() - timedelta(days=int(config["sync"]["lookback_days"]))
+        earliest = datetime.combine(first_day, time.min, tzinfo=local).astimezone(timezone.utc)
     client = AzureClient(config["azure_devops"]["organization"], pat)
     commits = collect(client, config, emails, earliest=earliest)
     state = load_state(destination / "state/synced_commits.json")
