@@ -16,6 +16,8 @@ from .state_manager import load_state
 
 
 LOG = logging.getLogger(__name__)
+# Commits created locally before each push; keeps large backfills to a few pushes.
+PUSH_BATCH_SIZE = 100
 
 
 def allowed(name, rules):
@@ -181,8 +183,8 @@ def main():
                           output_dir=config["output"]["directory"],
                           hash_length=int(config["output"]["hash_length"]),
                           timezone=config["sync"]["timezone"])
-    for commit in pending:
-        publisher.publish(commit)
+    for start in range(0, len(pending), PUSH_BATCH_SIZE):
+        publisher.publish_batch(pending[start:start + PUSH_BATCH_SIZE])
 
 
 if __name__ == "__main__":

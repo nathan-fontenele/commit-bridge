@@ -158,6 +158,41 @@ class PublisherTests(unittest.TestCase):
             state = json.loads((checkout / "state/synced_commits.json").read_text())
             self.assertEqual(state["synced"][commit.key]["file"], "activity/2026/06/2026-06-15.md")
 
+    def test_batch_creates_one_commit_per_event_and_pushes_once(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            bare = root / "remote.git"
+            checkout = root / "checkout"
+            git(root, "init", "--bare", str(bare))
+            git(root, "clone", str(bare), str(checkout))
+            git(checkout, "config", "user.name", "Initial")
+            git(checkout, "config", "user.email", "initial@example.com")
+            (checkout / "state").mkdir()
+            (checkout / "state/synced_commits.json").write_text('{"version": 1, "synced": {}}\n')
+            git(checkout, "add", ".")
+            git(checkout, "commit", "-m", "initial")
+            git(checkout, "push", "origin", "HEAD:main")
+            git(checkout, "checkout", "main")
+            publisher = Publisher(checkout, branch="main", email="verified@example.com", name="Me",
+                                  output_dir="activity", hash_length=8, timezone="America/Sao_Paulo")
+            commits = [Commit("org", "project", "Payment API", "repo", "payment-service", x * 40,
+                              f"feat: change {x}", "me@example.com",
+                              datetime(2026, 6, day, 15, tzinfo=timezone.utc))
+                       for day, x in ((1, "a"), (2, "b"), (3, "c"))]
+            original_git = publisher.git
+            pushes = []
+
+            def counting_git(*args, **kwargs):
+                if args[0] == "push":
+                    pushes.append(args)
+                return original_git(*args, **kwargs)
+
+            with patch.object(publisher, "git", side_effect=counting_git):
+                self.assertEqual(publisher.publish_batch(commits), 3)
+                self.assertEqual(publisher.publish_batch(commits), 0)
+            self.assertEqual(len(pushes), 1)
+            self.assertEqual(git(root, "--git-dir", str(bare), "rev-list", "--count", "main"), "4")
+
     def test_push_failure_reconciles_remote_success(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

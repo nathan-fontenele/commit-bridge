@@ -66,34 +66,49 @@ class Publisher:
         raise RuntimeError("Could not publish Markdown format repair after three attempts")
 
     def publish(self, commit):
+        return self.publish_batch([commit]) > 0
+
+    def publish_batch(self, commits):
+        """Create one local commit per source commit, then push them together.
+
+        Pushing per batch keeps backfills of hundreds of commits from hammering the remote.
+        """
         for attempt in range(3):
             state = load_state(self.state_path)
-            if commit.key in state["synced"]:
-                return False
-            now = datetime.now(self.timezone)
-            # File and Git dates follow the original Azure commit, so backfills land on their real day.
-            committed_at = commit.committed_at.astimezone(self.timezone)
-            path = activity_path(self.root, self.output_dir, committed_at.date())
-            repaired = normalize_activity_files(self.root / self.output_dir)
-            line = activity_line(commit, self.hash_length, self.timezone)
-            append_line(path, activity_row(commit, self.hash_length, self.timezone))
-            state["synced"][commit.key] = {
-                "synced_at": now.isoformat(timespec="seconds"),
-                "file": path.relative_to(self.root).as_posix(),
-            }
-            save_state(self.state_path, state)
-            changed_paths = {str(changed.relative_to(self.root)) for changed in [*repaired, path]}
-            self.git("add", "--", *sorted(changed_paths), "state/synced_commits.json")
-            date = committed_at.isoformat(timespec="seconds")
-            self.git("commit", "-m", line,
-                     env={**os.environ, "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date})
+            pending = [commit for commit in commits if commit.key not in state["synced"]]
+            if not pending:
+                return 0
+            for commit in pending:
+                self.commit_locally(commit)
             pushed = self.git("push", "origin", f"HEAD:{self.branch}", check=False)
             if pushed.returncode == 0:
-                return True
-            LOG.warning("Push failed (attempt %s)", attempt + 1)
+                return len(pending)
+            reason = [line.strip() for line in pushed.stderr.splitlines()
+                      if line.lstrip().startswith(("!", "error:", "remote:", "fatal:"))]
+            LOG.warning("Push failed (attempt %s): %s", attempt + 1, " / ".join(reason[:3]) or "no details")
             # Fetch the authoritative remote state. If the push actually succeeded,
-            # the state entry will be present and the next loop will skip it.
+            # the state entries will be present and the next loop will skip them.
             if attempt < 2:
-                time.sleep(2**attempt)
+                time.sleep(2**(attempt + 1))
                 self.refresh()
-        raise RuntimeError("Could not publish a source commit after three attempts")
+        raise RuntimeError("Could not publish source commits after three attempts")
+
+    def commit_locally(self, commit):
+        state = load_state(self.state_path)
+        now = datetime.now(self.timezone)
+        # File and Git dates follow the original Azure commit, so backfills land on their real day.
+        committed_at = commit.committed_at.astimezone(self.timezone)
+        path = activity_path(self.root, self.output_dir, committed_at.date())
+        repaired = normalize_activity_files(self.root / self.output_dir)
+        line = activity_line(commit, self.hash_length, self.timezone)
+        append_line(path, activity_row(commit, self.hash_length, self.timezone))
+        state["synced"][commit.key] = {
+            "synced_at": now.isoformat(timespec="seconds"),
+            "file": path.relative_to(self.root).as_posix(),
+        }
+        save_state(self.state_path, state)
+        changed_paths = {str(changed.relative_to(self.root)) for changed in [*repaired, path]}
+        self.git("add", "--", *sorted(changed_paths), "state/synced_commits.json")
+        date = committed_at.isoformat(timespec="seconds")
+        self.git("commit", "-m", line,
+                 env={**os.environ, "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date})
