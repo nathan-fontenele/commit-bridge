@@ -1,5 +1,13 @@
 # Azure DevOps Activity Sync
 
+[![Tests](https://github.com/nathan-fontenele/commit-bridge/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/nathan-fontenele/commit-bridge/actions/workflows/tests.yml)
+[![Sync Azure DevOps activity](https://github.com/nathan-fontenele/commit-bridge/actions/workflows/sync-activity.yml/badge.svg?branch=main)](https://github.com/nathan-fontenele/commit-bridge/actions/workflows/sync-activity.yml)
+[![Version](https://img.shields.io/github/v/tag/nathan-fontenele/commit-bridge?sort=semver&label=version)](https://github.com/nathan-fontenele/commit-bridge/tags)
+[![Python](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Azure DevOps REST API](https://img.shields.io/badge/Azure%20DevOps%20API-7.1-0078D7?logo=azuredevops&logoColor=white)](https://learn.microsoft.com/en-us/rest/api/azure/devops/git/?view=azure-devops-rest-7.1)
+[![License: MIT](https://img.shields.io/github/license/nathan-fontenele/commit-bridge)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/nathan-fontenele/commit-bridge/main)](https://github.com/nathan-fontenele/commit-bridge/commits/main)
+
 Automação em Python que registra, em um repositório GitHub **privado**, os commits feitos no Azure DevOps por e-mails de autoria configurados. Ela consulta todos os projetos, repositórios e branches acessíveis, cria uma linha Markdown para cada commit novo e publica **um commit Git no destino por atividade encontrada**, datado com o horário do commit original. Dias sem atividade não geram arquivos ou commits artificiais.
 
 O repositório com este código executa o GitHub Actions. Um segundo repositório, separado e privado, guarda os dados:
@@ -103,7 +111,7 @@ Commits presentes apenas em branches apagadas antes da busca não são encontrad
 
 O repositório de atividades deve permanecer privado. Revise também o histórico Git e as execuções antigas do Actions antes de tornar **o repositório do código** público: [o histórico e os logs do Actions ficam visíveis](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility). `config.local.yaml`, `.env`, tokens e arquivos de atividade não devem entrar no repositório do código.
 
-Para rodar os testes locais:
+O workflow **Tests** roda a suíte a cada push na `main` e em pull requests. Para rodar os testes localmente:
 
 ```bash
 python -m unittest discover -s tests -v
