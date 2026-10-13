@@ -48,7 +48,7 @@ def read_config(path: Path):
     return config, emails
 
 
-def collect(client, config, emails, *, earliest, latest=None):
+def collect(client, config, emails, *, earliest, latest=None, show_details=False):
     azure = config["azure_devops"]
     found = []
     seen = other_author = 0
@@ -76,8 +76,10 @@ def collect(client, config, emails, *, earliest, latest=None):
                                        emails=emails, earliest=earliest, latest=latest)
                     if commit:
                         found.append(commit)
-    LOG.info("Azure returned %s commits since %s; %s by other authors; %s matched",
-             seen, earliest.isoformat(), other_author, len(found))
+    # Counts reveal how much the organization commits; keep them out of public CI logs.
+    if show_details:
+        LOG.info("Azure returned %s commits since %s; %s by other authors; %s matched",
+                 seen, earliest.isoformat(), other_author, len(found))
     return unique_sorted(found)
 
 
@@ -160,7 +162,8 @@ def main():
         first_day = datetime.now(local).date() - timedelta(days=int(config["sync"]["lookback_days"]))
         earliest = datetime.combine(first_day, time.min, tzinfo=local).astimezone(timezone.utc)
     client = AzureClient(config["azure_devops"]["organization"], pat)
-    commits = collect(client, config, emails, earliest=earliest, latest=latest)
+    commits = collect(client, config, emails, earliest=earliest, latest=latest,
+                      show_details=args.show_details)
     state = load_state(destination / "state/synced_commits.json")
     pending = [commit for commit in commits if commit.key not in state["synced"]]
     LOG.info("Scan completed")

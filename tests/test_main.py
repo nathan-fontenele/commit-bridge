@@ -133,3 +133,18 @@ class MainTests(unittest.TestCase):
                 with patch.object(sys, "argv", ["sync", "--destination", str(destination), "--dry-run", *extra]),                      patch.dict("src.main.os.environ", {"AZURE_DEVOPS_PAT": "fake"}),                      patch("src.main.read_config", return_value=(config, {"me@example.com"})),                      patch("src.main.collect", return_value=[]) as collect,                      patch("sys.stderr"), self.assertRaises(SystemExit):
                     main()
                 collect.assert_not_called()
+
+    def test_collect_keeps_commit_counts_out_of_default_logs(self):
+        from src.main import collect
+
+        class EmptyClient:
+            def projects(self):
+                return []
+
+        config = {"azure_devops": {"organization": "org"}}
+        earliest = datetime(2026, 6, 1, tzinfo=timezone.utc)
+        with self.assertNoLogs("src.main", level="INFO"):
+            collect(EmptyClient(), config, {"me@example.com"}, earliest=earliest)
+        with self.assertLogs("src.main", level="INFO") as logs:
+            collect(EmptyClient(), config, {"me@example.com"}, earliest=earliest, show_details=True)
+        self.assertTrue(any("matched" in line for line in logs.output))
