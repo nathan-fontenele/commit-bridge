@@ -6,6 +6,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from src.commit_filter import Commit
 from src.main import main, read_config
@@ -96,3 +97,18 @@ class MainTests(unittest.TestCase):
             output = "\n".join(logs.output)
             for sensitive in (commit.project_name, commit.message, commit.sha, commit.organization_id):
                 self.assertNotIn(sensitive, output)
+
+    def test_zero_lookback_scans_only_the_current_local_day(self):
+        with tempfile.TemporaryDirectory() as temp:
+            destination = Path(temp)
+            subprocess.run(["git", "init", str(destination)], check=True, capture_output=True)
+            config = {"azure_devops": {"organization": "org"}, "sync": {"lookback_days": 0, "timezone": "America/Sao_Paulo"}}
+            with patch.object(sys, "argv", ["sync", "--destination", str(destination), "--dry-run"]), \
+                 patch.dict("src.main.os.environ", {"AZURE_DEVOPS_PAT": "fake"}), \
+                 patch("src.main.read_config", return_value=(config, {"me@example.com"})), \
+                 patch("src.main.collect", return_value=[]) as collect:
+                main()
+            earliest = collect.call_args.kwargs["earliest"]
+            local = earliest.astimezone(ZoneInfo("America/Sao_Paulo"))
+            self.assertEqual(local.date(), datetime.now(ZoneInfo("America/Sao_Paulo")).date())
+            self.assertEqual((local.hour, local.minute, local.second), (0, 0, 0))

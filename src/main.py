@@ -36,8 +36,8 @@ def read_config(path: Path):
     emails = {value.strip().casefold() for value in azure["authors"]["emails"]}
     if not organization or organization == "CHANGE_ME" or not emails or any("CHANGE_ME" in x for x in emails):
         raise ValueError("Set the Azure organization and author emails in config.yaml")
-    if int(config["sync"]["lookback_days"]) < 1:
-        raise ValueError("lookback_days must be positive")
+    if int(config["sync"]["lookback_days"]) < 0:
+        raise ValueError("lookback_days must not be negative")
     if not 1 <= int(config["output"]["hash_length"]) <= 40:
         raise ValueError("hash_length must be between 1 and 40")
     output = Path(config["output"]["directory"])
@@ -144,7 +144,7 @@ def main():
     if args.since:
         earliest = datetime.fromisoformat(args.since).replace(tzinfo=timezone.utc)
     else:
-        # Window starts at local midnight, so commits made today are always inside it.
+        # Window starts at local midnight; lookback_days 0 covers only the current local day.
         local = ZoneInfo(config["sync"]["timezone"])
         first_day = datetime.now(local).date() - timedelta(days=int(config["sync"]["lookback_days"]))
         earliest = datetime.combine(first_day, time.min, tzinfo=local).astimezone(timezone.utc)

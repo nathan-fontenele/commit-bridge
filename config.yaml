@@ -15,7 +15,7 @@ azure_devops:
 
 sync:
   timezone: "America/Sao_Paulo"
-  lookback_days: 7
+  lookback_days: 0
 
 output:
   directory: "activity"
