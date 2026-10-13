@@ -46,7 +46,7 @@ def read_config(path: Path):
     return config, emails
 
 
-def collect(client, config, emails, *, earliest):
+def collect(client, config, emails, *, earliest, latest=None):
     azure = config["azure_devops"]
     found = []
     seen = other_author = 0
@@ -59,8 +59,9 @@ def collect(client, config, emails, *, earliest):
             for branch in client.branches(project["id"], repository["id"]):
                 if not allowed(branch, azure.get("branches", {})):
                     continue
+                to_date = latest.strftime("%Y-%m-%dT%H:%M:%SZ") if latest else None
                 for raw in client.commits(project["id"], repository["id"], branch,
-                                          earliest.strftime("%Y-%m-%dT%H:%M:%SZ")):
+                                          earliest.strftime("%Y-%m-%dT%H:%M:%SZ"), to_date):
                     # Azure can truncate a long first line in list responses.
                     if raw.get("commentTruncated"):
                         raw = client.commit(project["id"], repository["id"], raw["commitId"])
@@ -70,7 +71,7 @@ def collect(client, config, emails, *, earliest):
                     commit = normalize(raw, organization_id=azure["organization"],
                                        project_id=project["id"], project_name=project["name"],
                                        repository_id=repository["id"], repository_name=repository["name"],
-                                       emails=emails, earliest=earliest)
+                                       emails=emails, earliest=earliest, latest=latest)
                     if commit:
                         found.append(commit)
     LOG.info("Azure returned %s commits since %s; %s by other authors; %s matched",
@@ -89,8 +90,9 @@ def main():
     parser.add_argument("--repair-format", action="store_true",
                         help="Upgrade saved activity rows from Azure in one maintenance commit")
     parser.add_argument("--since", help="Historical backfill start date (YYYY-MM-DD, UTC)")
+    parser.add_argument("--until", help="Inclusive backfill end date (YYYY-MM-DD, UTC); requires --since")
     args = parser.parse_args()
-    if args.repair_format and (args.dry_run or args.since or args.show_details):
+    if args.repair_format and (args.dry_run or args.since or args.until or args.show_details):
         parser.error("--repair-format cannot be combined with sync options")
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     source_root = Path(__file__).resolve().parents[1]
@@ -141,15 +143,22 @@ def main():
     pat = os.environ.get("AZURE_DEVOPS_PAT")
     if not pat:
         parser.error("AZURE_DEVOPS_PAT is required")
+    if args.until and not args.since:
+        parser.error("--until requires --since")
+    latest = None
     if args.since:
         earliest = datetime.fromisoformat(args.since).replace(tzinfo=timezone.utc)
+        if args.until:
+            latest = datetime.fromisoformat(args.until).replace(tzinfo=timezone.utc) + timedelta(days=1)
+            if latest <= earliest:
+                parser.error("--until must not be before --since")
     else:
         # Window starts at local midnight; lookback_days 0 covers only the current local day.
         local = ZoneInfo(config["sync"]["timezone"])
         first_day = datetime.now(local).date() - timedelta(days=int(config["sync"]["lookback_days"]))
         earliest = datetime.combine(first_day, time.min, tzinfo=local).astimezone(timezone.utc)
     client = AzureClient(config["azure_devops"]["organization"], pat)
-    commits = collect(client, config, emails, earliest=earliest)
+    commits = collect(client, config, emails, earliest=earliest, latest=latest)
     state = load_state(destination / "state/synced_commits.json")
     pending = [commit for commit in commits if commit.key not in state["synced"]]
     LOG.info("Scan completed")

@@ -112,3 +112,24 @@ class MainTests(unittest.TestCase):
             local = earliest.astimezone(ZoneInfo("America/Sao_Paulo"))
             self.assertEqual(local.date(), datetime.now(ZoneInfo("America/Sao_Paulo")).date())
             self.assertEqual((local.hour, local.minute, local.second), (0, 0, 0))
+
+    def test_until_closes_the_backfill_range_inclusively(self):
+        with tempfile.TemporaryDirectory() as temp:
+            destination = Path(temp)
+            subprocess.run(["git", "init", str(destination)], check=True, capture_output=True)
+            config = {"azure_devops": {"organization": "org"}, "sync": {"lookback_days": 0, "timezone": "America/Sao_Paulo"}}
+            with patch.object(sys, "argv", ["sync", "--destination", str(destination), "--dry-run",
+                                            "--since", "2026-06-01", "--until", "2026-06-30"]),                  patch.dict("src.main.os.environ", {"AZURE_DEVOPS_PAT": "fake"}),                  patch("src.main.read_config", return_value=(config, {"me@example.com"})),                  patch("src.main.collect", return_value=[]) as collect:
+                main()
+            self.assertEqual(collect.call_args.kwargs["earliest"], datetime(2026, 6, 1, tzinfo=timezone.utc))
+            self.assertEqual(collect.call_args.kwargs["latest"], datetime(2026, 7, 1, tzinfo=timezone.utc))
+
+    def test_until_requires_since_and_cannot_precede_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            destination = Path(temp)
+            subprocess.run(["git", "init", str(destination)], check=True, capture_output=True)
+            config = {"azure_devops": {"organization": "org"}, "sync": {"lookback_days": 0, "timezone": "America/Sao_Paulo"}}
+            for extra in (["--until", "2026-06-30"], ["--since", "2026-06-30", "--until", "2026-06-01"]):
+                with patch.object(sys, "argv", ["sync", "--destination", str(destination), "--dry-run", *extra]),                      patch.dict("src.main.os.environ", {"AZURE_DEVOPS_PAT": "fake"}),                      patch("src.main.read_config", return_value=(config, {"me@example.com"})),                      patch("src.main.collect", return_value=[]) as collect,                      patch("sys.stderr"), self.assertRaises(SystemExit):
+                    main()
+                collect.assert_not_called()

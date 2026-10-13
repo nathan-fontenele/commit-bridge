@@ -100,7 +100,8 @@ class AzureClient:
                 break
             seen.add(token)
 
-    def commits(self, project_id: str, repository_id: str, branch: str, from_date: str):
+    def commits(self, project_id: str, repository_id: str, branch: str, from_date: str,
+                to_date: str | None = None):
         path = f"{quote(project_id, safe='')}/_apis/git/repositories/{quote(repository_id, safe='')}/commits"
         skip = 0
         while True:
@@ -111,6 +112,8 @@ class AzureClient:
                 "searchCriteria.$top": PAGE_SIZE,
                 "searchCriteria.$skip": skip,
             }
+            if to_date:
+                params["searchCriteria.toDate"] = to_date
             body, _ = self.get(path, params)
             page = body.get("value", [])
             yield from page

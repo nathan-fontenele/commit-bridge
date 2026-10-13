@@ -17,6 +17,10 @@ on:
         description: "Optional UTC start date for historical backfill (YYYY-MM-DD)"
         type: string
         required: false
+      until:
+        description: "Optional inclusive UTC end date for the backfill (YYYY-MM-DD); requires since"
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -67,11 +71,12 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
           REPAIR_FORMAT: ${{ inputs.repair_format }}
           SINCE: ${{ inputs.since }}
+          UNTIL: ${{ inputs.until }}
         run: |
           export GITHUB_DEFAULT_BRANCH="$(git -C ../destination branch --show-current)"
           test -n "$GITHUB_DEFAULT_BRANCH"
-          if [[ "$REPAIR_FORMAT" == "true" && ( "$DRY_RUN" == "true" || -n "$SINCE" ) ]]; then
-            echo "repair_format cannot be combined with dry_run or since" >&2
+          if [[ "$REPAIR_FORMAT" == "true" && ( "$DRY_RUN" == "true" || -n "$SINCE" || -n "$UNTIL" ) ]]; then
+            echo "repair_format cannot be combined with dry_run, since or until" >&2
             exit 1
           fi
           if [[ "$REPAIR_FORMAT" == "true" ]]; then
@@ -83,4 +88,5 @@ jobs:
           args=()
           if [[ "$DRY_RUN" == "true" ]]; then args+=(--dry-run); fi
           if [[ -n "$SINCE" ]]; then args+=(--since "$SINCE"); fi
+          if [[ -n "$UNTIL" ]]; then args+=(--until "$UNTIL"); fi
           python -m src.main --destination ../destination "${args[@]}"

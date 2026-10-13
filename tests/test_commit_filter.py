@@ -25,6 +25,11 @@ class FilterTests(unittest.TestCase):
         self.assertIsNone(normalize({**self.raw, "author": {"email": "other@example.com"}}, **self.kwargs))
         self.assertIsNone(normalize({**self.raw, "committer": {"date": "2026-09-30T00:00:00Z"}}, **self.kwargs))
 
+    def test_latest_is_an_exclusive_upper_bound(self):
+        latest = datetime(2026, 10, 7, 15, tzinfo=timezone.utc)
+        self.assertIsNone(normalize(self.raw, **self.kwargs, latest=latest))
+        self.assertIsNotNone(normalize(self.raw, **self.kwargs, latest=datetime(2026, 10, 8, tzinfo=timezone.utc)))
+
     def test_duplicate_branch_result_is_one_event(self):
         commit = normalize(self.raw, **self.kwargs)
         other = normalize({**self.raw, "commitId": "b" * 40,

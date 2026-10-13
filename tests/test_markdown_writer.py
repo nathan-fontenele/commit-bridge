@@ -46,6 +46,15 @@ class MarkdownWriterTests(unittest.TestCase):
                          "| 2026-10-09 12:30:00 -03:00 | Payment API | payment-service | "
                          "feat: add invoice validation | aaaaaaaa |")
 
+    def test_backfilled_row_is_inserted_in_chronological_order(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "2026-06-15.md"
+            late = table_row("2026-06-15 18:00:00 -03:00", "P", "r", "late", "bbbbbbbb")
+            early = table_row("2026-06-15 09:00:00 -03:00", "P", "r", "early", "aaaaaaaa")
+            append_line(path, late)
+            append_line(path, early)
+            self.assertEqual(path.read_text(encoding="utf-8").splitlines()[2:], [early, late])
+
     def test_table_cells_escape_pipes_and_backslashes(self):
         self.assertEqual(table_row("date", "A|B", "repo", r"fix: A\B | C", "abcdef12"),
                          r"| date | A\|B | repo | fix: A\\B \| C | abcdef12 |")

@@ -1,6 +1,7 @@
 """Publish one atomic Markdown/state commit for each source commit."""
 
 import logging
+import os
 import subprocess
 import time
 from datetime import datetime
@@ -30,8 +31,8 @@ class Publisher:
             raise RuntimeError("The checkout must be clean before publishing")
         self.refresh()
 
-    def git(self, *args, check=True):
-        result = subprocess.run(["git", *args], cwd=self.root, text=True,
+    def git(self, *args, check=True, env=None):
+        result = subprocess.run(["git", *args], cwd=self.root, text=True, env=env,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if check and result.returncode:
             raise RuntimeError(f"git {args[0]} failed with status {result.returncode}")
@@ -70,7 +71,9 @@ class Publisher:
             if commit.key in state["synced"]:
                 return False
             now = datetime.now(self.timezone)
-            path = activity_path(self.root, self.output_dir, now.date())
+            # File and Git dates follow the original Azure commit, so backfills land on their real day.
+            committed_at = commit.committed_at.astimezone(self.timezone)
+            path = activity_path(self.root, self.output_dir, committed_at.date())
             repaired = normalize_activity_files(self.root / self.output_dir)
             line = activity_line(commit, self.hash_length, self.timezone)
             append_line(path, activity_row(commit, self.hash_length, self.timezone))
@@ -81,7 +84,9 @@ class Publisher:
             save_state(self.state_path, state)
             changed_paths = {str(changed.relative_to(self.root)) for changed in [*repaired, path]}
             self.git("add", "--", *sorted(changed_paths), "state/synced_commits.json")
-            self.git("commit", "-m", line)
+            date = committed_at.isoformat(timespec="seconds")
+            self.git("commit", "-m", line,
+                     env={**os.environ, "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date})
             pushed = self.git("push", "origin", f"HEAD:{self.branch}", check=False)
             if pushed.returncode == 0:
                 return True

@@ -22,7 +22,7 @@ class Commit:
 
 
 def normalize(raw, *, organization_id, project_id, project_name, repository_id, repository_name,
-              emails, earliest):
+              emails, earliest, latest=None):
     sha = raw.get("commitId", "").lower()
     email = raw.get("author", {}).get("email", "").strip().casefold()
     date_text = raw.get("committer", {}).get("date", "")
@@ -34,7 +34,7 @@ def normalize(raw, *, organization_id, project_id, project_name, repository_id, 
         committed_at = datetime.fromisoformat(date_text.replace("Z", "+00:00")).astimezone(timezone.utc)
     except ValueError:
         return None
-    if committed_at < earliest:
+    if committed_at < earliest or (latest and committed_at >= latest):
         return None
     message = raw.get("comment", "").splitlines()
     if not message or not message[0]:

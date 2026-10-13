@@ -131,6 +131,33 @@ class PublisherTests(unittest.TestCase):
                              f"{TABLE_HEADER}\n{TABLE_SEPARATOR}\n"
                              "| — | Legacy | — | older commit | 12345678 |\n")
 
+    def test_backfilled_commit_uses_original_day_and_git_dates(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            bare = root / "remote.git"
+            checkout = root / "checkout"
+            git(root, "init", "--bare", str(bare))
+            git(root, "clone", str(bare), str(checkout))
+            git(checkout, "config", "user.name", "Initial")
+            git(checkout, "config", "user.email", "initial@example.com")
+            (checkout / "state").mkdir()
+            (checkout / "state/synced_commits.json").write_text('{"version": 1, "synced": {}}\n')
+            git(checkout, "add", ".")
+            git(checkout, "commit", "-m", "initial")
+            git(checkout, "push", "origin", "HEAD:main")
+            git(checkout, "checkout", "main")
+            publisher = Publisher(checkout, branch="main", email="verified@example.com", name="Me",
+                                  output_dir="activity", hash_length=8, timezone="America/Sao_Paulo")
+            # 01:30 UTC on June 16 is still June 15 in Brasília.
+            commit = Commit("org", "project", "Payment API", "repo", "payment-service", "a" * 40,
+                            "feat: june", "me@example.com", datetime(2026, 6, 16, 1, 30, tzinfo=timezone.utc))
+            self.assertTrue(publisher.publish(commit))
+            self.assertTrue((checkout / "activity/2026/06/2026-06-15.md").exists())
+            self.assertEqual(git(checkout, "log", "-1", "--format=%aI %cI"),
+                             "2026-06-15T22:30:00-03:00 2026-06-15T22:30:00-03:00")
+            state = json.loads((checkout / "state/synced_commits.json").read_text())
+            self.assertEqual(state["synced"][commit.key]["file"], "activity/2026/06/2026-06-15.md")
+
     def test_push_failure_reconciles_remote_success(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

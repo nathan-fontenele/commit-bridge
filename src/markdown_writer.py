@@ -12,8 +12,8 @@ LEGACY_PLAIN = re.compile(r"^\[(.*?)\] (.*) - ([0-9a-fA-F]{1,40})$")
 TABLE_HASH = re.compile(r"\| ([0-9a-fA-F]{1,40}) \|$")
 
 
-def activity_path(root: Path, directory: str, sync_day):
-    return root / directory / sync_day.strftime("%Y/%m/%Y-%m-%d.md")
+def activity_path(root: Path, directory: str, day):
+    return root / directory / day.strftime("%Y/%m/%Y-%m-%d.md")
 
 
 def activity_line(commit, hash_length: int, timezone):
@@ -82,7 +82,18 @@ def append_line(path: Path, line: str):
     rows = read_rows(existing)
     if line in rows:
         raise ValueError(f"Activity line already exists without state entry: {path}")
-    path.write_text(render_table([*rows, line]), encoding="utf-8")
+    # Backfilled commits may be older than rows already in the file; keep the day chronological.
+    position = next((index for index, row in enumerate(rows) if row_time(row) > row_time(line)),
+                    len(rows))
+    rows.insert(position, line)
+    path.write_text(render_table(rows), encoding="utf-8")
+
+
+def row_time(row: str):
+    # Same-day rows share one offset, so the text order of the date cell is chronological.
+    # Legacy rows without a date ("—") never move.
+    cell = row[2:].split(" | ", 1)[0]
+    return cell if cell[:1].isdigit() else ""
 
 
 def normalize_activity_files(directory: Path):

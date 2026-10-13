@@ -1,6 +1,6 @@
 # Azure DevOps Activity Sync
 
-Automação em Python que registra, em um repositório GitHub **privado**, os commits feitos no Azure DevOps por e-mails de autoria configurados. Ela consulta todos os projetos, repositórios e branches acessíveis, cria uma linha Markdown para cada commit novo e publica **um commit Git no destino por atividade encontrada**. Dias sem atividade não geram arquivos ou commits artificiais.
+Automação em Python que registra, em um repositório GitHub **privado**, os commits feitos no Azure DevOps por e-mails de autoria configurados. Ela consulta todos os projetos, repositórios e branches acessíveis, cria uma linha Markdown para cada commit novo e publica **um commit Git no destino por atividade encontrada**, datado com o horário do commit original. Dias sem atividade não geram arquivos ou commits artificiais.
 
 O repositório com este código executa o GitHub Actions. Um segundo repositório, separado e privado, guarda os dados:
 
@@ -17,7 +17,7 @@ Cada arquivo diário mostra os commits em uma tabela Markdown:
 | --- | --- | --- | --- | --- |
 | 2026-10-09 12:30:00 -03:00 | Payment API | payment-service | feat: add invoice validation | a1b2c3d4 |
 
-A data e hora na tabela são as do **commit original no Azure**, convertidas para `America/Sao_Paulo`; a data do arquivo é a da **sincronização** nesse fuso. O estado evita duplicatas entre branches e execuções. A mensagem do commit Git de sincronização continua no formato `[data/hora] [projeto] [repositório] [mensagem] [hash]`, com a data real de criação do commit no GitHub. O reparo manual converte arquivos antigos para tabelas; as mensagens dos commits Git já publicados continuam no histórico original.
+A data e hora na tabela, a data do arquivo e a data do commit Git de sincronização são as do **commit original no Azure**, no fuso `America/Sao_Paulo`. Assim, um commit de junho buscado depois é registrado em junho, no arquivo e no gráfico de contribuições do GitHub. O estado evita duplicatas entre branches e execuções. A mensagem do commit Git de sincronização segue o formato `[data/hora] [projeto] [repositório] [mensagem] [hash]`. Registros feitos antes dessa regra continuam no arquivo do dia em que foram sincronizados. O reparo manual converte arquivos antigos para tabelas; as mensagens dos commits Git já publicados continuam no histórico original.
 
 Se uma atividade antiga ainda não tiver data/hora ou repositório na linha original, a conversão automática mostrará `—` nesses campos até a execução do reparo manual com acesso ao Azure.
 
@@ -72,9 +72,9 @@ O `config.yaml` versionado é um modelo seguro para publicação. Com as listas 
 2. No fork, abra **Actions → Sync Azure DevOps activity → Run workflow**, marque `dry_run: true` e execute. Isso testa autenticação e descoberta sem publicar. Por segurança, os logs do Actions não exibem nomes, mensagens, SHAs do Azure nem contagens de atividade.
 3. Para conferir **quais** commits seriam publicados, use a prévia local descrita abaixo em um ambiente privado. Depois execute o workflow com `dry_run: false` e confira o repositório de destino. Se não houver commit novo, ele não será modificado.
 
-O agendamento roda a cada hora, no minuto 17 UTC. A consulta normal cobre somente o dia vigente no fuso `America/Sao_Paulo`, a partir da meia-noite local (`lookback_days: 0`); aumente esse valor para incluir dias anteriores. Commits feitos pouco antes da meia-noite que só cheguem ao Azure, ou só sejam sincronizados, depois dela ficam fora da janela. Na execução manual, o campo `since` aceita `YYYY-MM-DD` em UTC para reprocessar um período mais antigo sem duplicar os commits já registrados.
+O agendamento roda a cada hora, no minuto 17 UTC. A consulta normal cobre somente o dia vigente no fuso `America/Sao_Paulo`, a partir da meia-noite local (`lookback_days: 0`); aumente esse valor para incluir dias anteriores. Commits feitos pouco antes da meia-noite que só cheguem ao Azure, ou só sejam sincronizados, depois dela ficam fora da janela. Na execução manual, o campo `since` aceita `YYYY-MM-DD` em UTC para reprocessar um período mais antigo sem duplicar os commits já registrados; sozinho, ele vai até o momento atual. Para um intervalo fechado, preencha também `until` (`YYYY-MM-DD` em UTC, inclusivo), por exemplo `since: 2026-06-01` e `until: 2026-06-30`. `until` exige `since`. Localmente, use `--since` e `--until`.
 
-Para converter arquivos antigos em tabelas e preencher campos que faltam, execute o workflow manualmente com **`repair_format: true`**, deixando `dry_run` desmarcado e `since` vazio. O reparo consulta no Azure os commits antigos registrados no estado quando precisa de metadados ausentes. Ele não altera o estado de sincronização e cria um único commit de manutenção com autor bot **somente se houver arquivos a corrigir**. Se algum commit antigo necessário não estiver mais acessível no Azure ou não corresponder ao estado salvo, o reparo falha sem publicar dados incompletos. As mensagens dos commits Git anteriores não são reescritas.
+Para converter arquivos antigos em tabelas e preencher campos que faltam, execute o workflow manualmente com **`repair_format: true`**, deixando `dry_run` desmarcado e `since` e `until` vazios. O reparo consulta no Azure os commits antigos registrados no estado quando precisa de metadados ausentes. Ele não altera o estado de sincronização e cria um único commit de manutenção com autor bot **somente se houver arquivos a corrigir**. Se algum commit antigo necessário não estiver mais acessível no Azure ou não corresponder ao estado salvo, o reparo falha sem publicar dados incompletos. As mensagens dos commits Git anteriores não são reescritas.
 
 ### Prévia local detalhada
 

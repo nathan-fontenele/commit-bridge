@@ -17,7 +17,7 @@ class ClientTests(unittest.TestCase):
             def branches(self, project_id, repository_id):
                 return ["main", "feature"]
 
-            def commits(self, project_id, repository_id, branch, from_date):
+            def commits(self, project_id, repository_id, branch, from_date, to_date=None):
                 return [{"commitId": ("a" if project_id == "p1" else "b") * 40,
                          "author": {"email": "me@example.com"},
                          "committer": {"date": "2026-10-07T15:00:00Z"},
